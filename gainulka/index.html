@@ -27,7 +27,8 @@ canvas:focus-visible{outline:3px solid #ff8fb1;outline-offset:2px}
    ГАЙНУЛКА · Уровень 1 «Дорога к дому Яши»
    ========================================================= */
 const W = 1280, H = 720, GROUND = 600, G = 2300;
-const ARENA_X = 7000, LEVEL_END = ARENA_X + W;
+let level = /level2/.test(location.hash) ? 2 : 1;
+let ARENA_X = 7000, LEVEL_END = ARENA_X + W;
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 const INK = '#1b1411';
@@ -107,8 +108,9 @@ cv.addEventListener('mousedown', e => {
 });
 addEventListener('mouseup', e => { if (e.button !== 2) mouse.down = false; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('wheel', e => { e.preventDefault(); mouse.wheel = Math.sign(e.deltaY); }, { passive: false });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; if (state === 'play') state = 'paused'; });
-function consume() { for (const k in pressed) delete pressed[k]; mouse.clicked = false; mouse.rclicked = false; }
+function consume() { for (const k in pressed) delete pressed[k]; mouse.clicked = false; mouse.rclicked = false; mouse.wheel = 0; }
 const anyStart = () => mouse.clicked || pressed.Enter || pressed.Space;
 
 /* ---------------- audio ---------------- */
@@ -155,6 +157,9 @@ const sfx = {
   horn() { audio.tone(330, .35, 'square', .06); audio.tone(415, .35, 'square', .05); },
   happy() { [523, 659, 784, 1047].forEach((f, i) => audio.tone(f, .2, 'triangle', .1, 0, i * .09)); },
   treat() { audio.tone(700, .1, 'triangle', .1, 200); },
+  cork() { audio.noise(.06, .3, 1800); audio.tone(260, .09, 'square', .07, 700); },
+  slosh() { audio.noise(.25, .18, 500); audio.tone(160, .2, 'sine', .08, -60); },
+  ring() { for (let i = 0; i < 6; i++) audio.tone(1500 + (i % 2) * 300, .05, 'square', .03, 0, i * .05); },
 };
 const SONGS = {
   town: { dt: .17, wave: 'square', vol: .03,
@@ -163,6 +168,9 @@ const SONGS = {
   boss: { dt: .135, wave: 'square', vol: .03,
     mel: [69, 72, 76, 72, 69, 72, 76, 79, 77, 76, 74, 72, 71, 72, 74, null, 69, 72, 76, 81, 79, 77, 76, 74, 72, 71, 69, 71, 72, null, 76, null],
     bass: [45, null, 45, null, 41, null, 41, null, 43, null, 43, null, 40, null, 44, null] },
+  office: { dt: .16, wave: 'triangle', vol: .055,
+    mel: [65, null, 69, 72, 70, 69, 67, null, 65, 67, 69, null, 72, null, 70, 69, 67, null, 70, 74, 72, 70, 69, null, 65, null, 60, null, 65, null, null, null],
+    bass: [41, null, null, null, 46, null, null, null, 48, null, null, null, 41, null, 48, null] },
   win: { dt: .16, wave: 'triangle', vol: .06,
     mel: [72, 76, 79, 84, 79, 76, 77, 81, 84, 89, 84, 81, 79, 83, 86, 91, null, null, 84, null, 88, null, 91, null, 96, null, null, null, null, null, null, null],
     bass: [48, null, null, null, 53, null, null, null, 55, null, null, null, 48, null, null, null] },
@@ -207,12 +215,16 @@ let banner = null; // {text, sub, t}
 
 function resetPlayer(x) {
   Object.assign(P, { x, y: GROUND, vx: 0, vy: 0, onGround: true, coyote: 0, facing: 1, hp: 5, maxHp: 5,
-    inv: 0, cool: 0, ph: 0, aim: 0, treatCool: 0, ctrl: true, pose: 'normal', drop: 0, shootAnim: 0, lean: 0 });
+    inv: 0, cool: 0, ph: 0, aim: 0, treatCool: 0, ctrl: true, pose: 'normal', drop: 0, shootAnim: 0, lean: 0, weapon: 0 });
 }
 
 /* ---------------- level ---------------- */
 function addPlat(x, y, w) { platforms.push({ x, y, w }); }
 function buildLevel() {
+  ARENA_X = LEVELS[level].arena; LEVEL_END = ARENA_X + W; hugT = -1;
+  if (level === 2) buildLevel2(); else buildLevel1();
+}
+function buildLevel1() {
   ents = []; shots = []; foes = []; items = []; parts = []; treats = []; props = []; platforms = [];
   boss = null; cam.lock = false; daisies = 0; bubbles = 0; runTime = 0;
 
@@ -261,6 +273,11 @@ function mk(type, x, y, air) {
   const e = { type, x, y, vx: 0, vy: 0, t: Math.random() * 3, seed: Math.random() * 10, facing: -1, hp: 1, flash: 0 };
   if (type === 'pigeon') { e.st = air ? 'fly' : 'perch'; e.baseY = y; e.dive = rnd(1, 2.5); e.harm = true; }
   if (type === 'rat') { e.hp = 2; e.hopT = rnd(.3, 1.2); e.harm = true; e.onGround = true; e.pause = 0; }
+  if (type === 'clock') { e.hp = 2; e.hopT = rnd(.4, 1.2); e.harm = true; e.onGround = true; e.ring = 0; }
+  if (type === 'ticket') { e.st = 'fly'; e.dive = rnd(1, 2.5); e.harm = true; }
+  if (type === 'colleague') { e.hp = 3; e.shootT = 1; e.talk = 0; e.facing = -1; e.v = ents.filter(o => o.type === 'colleague').length % 3; }
+  if (type === 'printer') { e.hp = 4; e.shootT = 1.5; e.jam = 0; }
+  if (type === 'zoomwin') { e.hp = 2; e.shootT = 1.5; }
   if (type === 'baba') { e.hp = 3; e.shootT = 1; e.talk = 0; e.facing = -1; e.v = ents.filter(o => o.type === 'baba').length % 3; }
   return e;
 }
@@ -268,11 +285,316 @@ function entBox(e) {
   switch (e.type) {
     case 'pigeon': return { l: e.x - 20, r: e.x + 20, t: e.y - 16, b: e.y + 12 };
     case 'rat': return { l: e.x - 36, r: e.x + 36, t: e.y - 42, b: e.y };
+    case 'clock': return { l: e.x - 26, r: e.x + 26, t: e.y - 62, b: e.y };
+    case 'ticket': return { l: e.x - 30, r: e.x + 30, t: e.y - 22, b: e.y + 22 };
+    case 'colleague': return { l: e.x - 26, r: e.x + 26, t: e.y - 218, b: e.y - 10 };
+    case 'printer': return { l: e.x - 46, r: e.x + 46, t: e.y - 100, b: e.y };
+    case 'zoomwin': return { l: e.x - 62, r: e.x + 62, t: e.y - 46, b: e.y + 46 };
     case 'baba': return { l: e.x - 34, r: e.x + 34, t: e.y - 118, b: e.y - 20 };
   }
   return null;
 }
 const pBox = () => ({ l: P.x - 16, r: P.x + 16, t: P.y - 236, b: P.y - 4 });
+
+/* =========================================================
+   УРОВЕНЬ 2 · «Опенспейс» — офис Simple
+   ========================================================= */
+const LEVELS = {
+  1: { arena: 7000, cp: 4040, cpX: 4100, song: 'town' },
+  2: { arena: 6600, cp: 3300, cpX: 3350, song: 'office' },
+};
+const WINES = [
+  { name: 'ИГРИСТОЕ', glass: '#2f5d3a', foil: '#e2c25a', label: '#efe4c4', drop: '#f6e7a1' },
+  { name: 'КРАСНОЕ', glass: '#3e0f1c', foil: '#7a1a2c', label: '#f1e6d6', drop: '#8e1b3a' },
+  { name: 'РОЗЕ', glass: '#f2a6b8', foil: '#e86a8f', label: '#fff6f0', drop: '#ff8fb1' },
+];
+const COLLEAGUE_PHRASES = ['Есть минутка?', 'Быстрый вопрос!', 'Глянь табличку?', 'Созвон через 5 минут!', 'А где ТЗ?', 'Можно в приоритет?', 'Обсудим на дейли?'];
+const COLLEAGUE_CALM = ['Ой, всё, сам разберусь!', 'Понял, ушёл!', 'Хорошего дня!'];
+const ZOOM_PHRASES = ['Вы на мьюте!', 'Меня слышно?', 'Видно экран?', 'Давайте подождём всех'];
+const STAKE_PHRASES = ['Ещё фичу!', 'Сроки вчера!', 'А можно пожелтее?', 'Давай по-быстрому!', 'Это же 5 минут!'];
+
+function desk(x, w = 200) { props.push({ t: 'desk', x, w }); addPlat(x, GROUND - 92, w); }
+function buildLevel2() {
+  ents = []; shots = []; foes = []; items = []; parts = []; treats = []; props = []; platforms = [];
+  boss = null; cam.lock = false; daisies = 0; bubbles = 0; runTime = 0;
+
+  props.push({ t: 'reception', x: 40 });
+  props.push({ t: 'note', x: 600, lines: ['1 · 2 · 3 или Q —', 'сменить вино'] });
+  props.push({ t: 'note', x: 930, lines: ['Игристое — пробкой', 'Красное — по дуге', 'Розе — веером'] });
+  ents.push(mk('clock', 1150, GROUND));
+  desk(1250);
+  ents.push(mk('ticket', 1520, 330, true)); ents.push(mk('ticket', 1680, 300, true));
+  props.push({ t: 'meeting', x: 1720, w: 380, name: 'Шардоне' });
+  ents.push(mk('colleague', 1950, GROUND));
+  ents.push({ type: 'puddle', x: 2200, w: 110, coffee: true });
+  ents.push(mk('printer', 2450, GROUND));
+  desk(2620);
+  props.push({ t: 'cabinet', x: 2880, h: 130 }); addPlat(2880, GROUND - 130, 70);
+  ents.push(mk('clock', 2760, GROUND)); ents.push(mk('clock', 3020, GROUND));
+  ents.push(mk('zoomwin', 3150, 320, true));
+  props.push({ t: 'checkpoint', x: 3300 });
+  props.push({ t: 'kitchen', x: 3440, w: 260 }); addPlat(3440, GROUND - 100, 260);
+  ents.push(mk('colleague', 3800, GROUND));
+  props.push({ t: 'rack', x: 4020, w: 170, h: 170 }); addPlat(4020, GROUND - 170, 170);
+  ents.push(mk('printer', 4300, GROUND));
+  ents.push({ type: 'puddle', x: 4480, w: 120, coffee: true });
+  desk(4640);
+  ents.push(mk('ticket', 4720, 320, true)); ents.push(mk('ticket', 4880, 280, true)); ents.push(mk('ticket', 5030, 330, true));
+  props.push({ t: 'meeting', x: 5000, w: 380, name: 'Пино Нуар' });
+  ents.push(mk('zoomwin', 5250, 300, true)); ents.push(mk('clock', 5320, GROUND));
+  ents.push(mk('colleague', 5560, GROUND));
+  desk(5820);
+  ents.push(mk('clock', 5950, GROUND)); ents.push(mk('clock', 6100, GROUND));
+  props.push({ t: 'gate2', x: 6330 });
+  props.push({ t: 'arena2', x: ARENA_X });
+
+  const GR = [[700, 520], [780, 500], [1300, 450], [1360, 450], [1600, 540], [1980, 380], [2250, 470], [2670, 450], [2740, 450],
+    [2905, 400], [3200, 540], [3480, 430], [3560, 430], [3640, 430], [3900, 540], [4060, 360], [4140, 360], [4510, 470],
+    [4700, 450], [4780, 450], [5100, 520], [5400, 540], [5860, 450], [5940, 450], [6200, 520]];
+  for (const [x, y] of GR) items.push({ type: 'grape', x, y, ph: Math.random() * 6 });
+  daisyTotal = GR.length;
+  items.push({ type: 'heart', x: 2560, y: 530, ph: 0 });
+  items.push({ type: 'heart', x: 3600, y: 420, ph: 1 });
+  items.push({ type: 'heart', x: 5700, y: 530, ph: 2 });
+}
+
+/* ----- level 2 enemies ----- */
+function updOfficeEnt(e, dt, dx, adx) {
+  switch (e.type) {
+    case 'clock':
+      e.vy += G * dt; e.x += e.vx * dt; e.y += e.vy * dt;
+      if (e.y >= GROUND) { if (!e.onGround) dust(e.x, GROUND, 2); e.y = GROUND; e.vy = 0; e.onGround = true; } else e.onGround = false;
+      e.hopT -= dt; e.ring = adx < 260 ? e.ring + dt : 0;
+      if (e.onGround) {
+        if (adx < 760) { e.facing = dx > 0 ? 1 : -1; e.vx += (e.facing * 150 - e.vx) * Math.min(1, dt * 5); } else e.vx *= .85;
+        if (e.hopT <= 0 && adx < 230) { e.vy = -520; e.vx = Math.sign(dx) * 240; e.hopT = rnd(1.1, 1.7); e.onGround = false; sfx.ring(); }
+      }
+      return true;
+    case 'ticket':
+      if (e.st === 'perch') e.st = 'fly';
+      e.dive -= dt;
+      if (e.diving) {
+        e.dvt += dt;
+        const ddx = e.tx - e.x, ddy = e.ty - e.y, d = Math.hypot(ddx, ddy) || 1;
+        e.vx = ddx / d * 430; e.vy = ddy / d * 430;
+        if (d < 20 || e.dvt > 1.1) { e.diving = false; e.dive = rnd(1.8, 2.8); e.vy = -260; }
+      } else {
+        e.vx += (Math.sign(dx) * 140 - e.vx) * dt * 2;
+        const ty = P.y - 330 + Math.sin(e.t * 3 + e.seed) * 30;
+        e.vy += ((ty - e.y) * 2.4 - e.vy) * dt * 3;
+        if (e.dive <= 0 && adx < 420) { e.diving = true; e.dvt = 0; e.tx = P.x + P.vx * .3; e.ty = P.y - 130; sfx.coo(); }
+      }
+      e.x += e.vx * dt; e.y += e.vy * dt; e.y = Math.min(e.y, GROUND - 24);
+      e.facing = e.vx > 0 ? 1 : -1;
+      return true;
+    case 'colleague':
+      e.talk -= dt;
+      if (!e.calm) {
+        e.shootT -= dt; e.facing = dx > 0 ? 1 : -1;
+        if (e.shootT <= 0 && adx < 780 && adx > 60) { e.shootT = rnd(1.9, 2.6); e.talk = .5; officePhrase(e, pick(COLLEAGUE_PHRASES), e.y - 190); }
+      } else { e.x += e.leave * 120 * dt; e.leaveT -= dt; if (e.leaveT < 0) e.dead = true; }
+      return true;
+    case 'printer':
+      e.shootT -= dt;
+      if (!e.calm && e.shootT <= 0 && adx < 720) {
+        e.shootT = rnd(1.6, 2.2); e.jam = .3; sfx.thud();
+        const sx = e.x, sy = e.y - 80, T = .9, tx = P.x + P.vx * .2, ty = P.y - 120;
+        foes.push({ kind: 'paper', x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy - .5 * G * .5 * T * T) / T, w: 34, h: 26, grav: .5, life: 3, pop: true, rot: 0 });
+      }
+      e.jam -= dt;
+      return true;
+    case 'zoomwin':
+      e.t2 = (e.t2 || 0) + dt;
+      if (!e.calm) {
+        const tx = P.x + Math.sin(e.t2 * .8 + e.seed) * 260, ty = P.y - 330 + Math.sin(e.t2 * 2) * 26;
+        e.x += (tx - e.x) * Math.min(1, dt * .9); e.y += (ty - e.y) * Math.min(1, dt * 2);
+        e.shootT -= dt;
+        if (e.shootT <= 0 && adx < 700) { e.shootT = rnd(2.2, 3); officePhrase(e, pick(ZOOM_PHRASES), e.y + 40); }
+      } else { e.y -= 160 * dt; e.leaveT -= dt; if (e.leaveT < 0) e.dead = true; }
+      return true;
+  }
+  return false;
+}
+function officePhrase(e, text, sy) {
+  ctx.font = `700 20px ${FB}`;
+  const w = ctx.measureText(text).width + 28, sx = e.x + (e.facing || -1) * 30;
+  const tx = P.x, ty = P.y - 140, d = Math.hypot(tx - sx, ty - sy) || 1;
+  foes.push({ kind: 'phrase', text, x: sx, y: sy, vx: (tx - sx) / d * 240, vy: (ty - sy) / d * 240, w, h: 40, life: 5, pop: true, office: true });
+}
+// called when an office enemy runs out of hp; returns true if handled (calmed instead of trapped)
+function calmOffice(e) {
+  if (e.type === 'colleague') {
+    e.calm = true; e.leave = Math.sign(e.x - P.x) || 1; e.leaveT = 3; e.harm = false;
+    foes = foes.filter(f => f.kind !== 'phrase' || Math.abs(f.x - e.x) > 900);
+    part({ x: e.x, y: e.y - 240, vy: -10, life: 2.2, max: 2.2, kind: 'say', text: pick(COLLEAGUE_CALM), size: 20 }); sfx.happy();
+    return true;
+  }
+  if (e.type === 'printer') {
+    e.calm = true; word('ПЕЧАТЬ ЗАВЕРШЕНА', e.x, e.y - 140, '#bff3ff', 22); sfx.happy(); return true;
+  }
+  if (e.type === 'zoomwin') {
+    e.calm = true; e.leaveT = 2; part({ x: e.x, y: e.y - 60, vy: -20, life: 1.6, max: 1.6, kind: 'say', text: 'Звонок завершён', size: 18 }); sfx.happy(); return true;
+  }
+  return false;
+}
+
+/* ----- wine weapon ----- */
+function shootWine() {
+  const m = muzzle(), w = P.weapon || 0;
+  if (w === 0) {
+    shots.push({ kind: 'cork', x: m.x, y: m.y, vx: m.dx * 1150 + P.vx * .2, vy: m.dy * 1150, r: 8, life: .75, rot: 0, dmg: 2 });
+    P.cool = .3; sfx.cork();
+    for (let i = 0; i < 8; i++) part({ x: m.x, y: m.y, vx: m.dx * rnd(80, 260) + rnd(-60, 60), vy: m.dy * rnd(80, 260) + rnd(-90, 30), life: .5, max: .5, size: rnd(2, 4), kind: 'spark', color: pick(['#fff6c8', '#f6e7a1', '#ffffff']) });
+  } else if (w === 1) {
+    shots.push({ kind: 'red', x: m.x, y: m.y, vx: m.dx * 720 + P.vx * .3, vy: m.dy * 720 - 260, r: 12, life: 1.8, dmg: 2, wob: 0 });
+    P.cool = .5; sfx.slosh();
+  } else {
+    const base = Math.atan2(m.dy, m.dx);
+    for (const a of [-.17, 0, .17]) shots.push({ kind: 'rose', x: m.x, y: m.y, vx: Math.cos(base + a) * 840, vy: Math.sin(base + a) * 840, r: 7, life: .45, dmg: .8 });
+    P.cool = .24; sfx.shoot();
+  }
+  P.shootAnim = .1; bubbles++;
+}
+function wineSplash(x, y) {
+  sfx.splash(); cam.shake = Math.max(cam.shake, 4);
+  for (let i = 0; i < 16; i++) part({ x, y, vx: rnd(-260, 260), vy: rnd(-420, -60), g: G * .6, life: .7, max: .7, size: rnd(3, 7), kind: 'drop', color: pick(['#8e1b3a', '#a8264a', '#6e1430']) });
+  part({ x, y, life: .3, max: .3, size: 60, kind: 'ring', color: '#c43a5c' });
+  for (const e of ents) {
+    if (e.trapped || e.dead || e.calm) continue;
+    const b = entBox(e); if (!b) continue;
+    const cx = (b.l + b.r) / 2, cy = (b.t + b.b) / 2;
+    if (Math.hypot(cx - x, cy - y) < 95) damageEnt(e, 1.5);
+  }
+  for (const f of foes) if (f.pop && !f.dead && Math.hypot(f.x - x, f.y - y) < 95) { f.dead = true; popFx(f.x, f.y, 6); }
+  if (boss && boss.kind === 'outlook') outlookHit({ x, y, r: 80, dmg: 1.5, splash: true });
+}
+
+/* ----- boss: Аутлук ----- */
+function spawnOutlook() {
+  boss = { kind: 'outlook', x: ARENA_X + 905, y: GROUND - 150, baseY: GROUND - 300, vx: 0, vy: 0, facing: -1, state: 'emerge', st: 0,
+    hp: 300, maxHp: 300, flash: 0, mouth: 0, anim: 0, heads: 0, last: '', scale: .2, contact: false };
+}
+const outlookPhase = () => boss.hp > 200 ? 1 : boss.hp > 100 ? 2 : 3;
+function oSet(s) { boss.state = s; boss.st = 0; boss.contact = false; boss.v1 = boss.v2 = boss.v3 = 0; }
+function outlookBox() { const s = boss.scale; return { l: boss.x - 130 * s, r: boss.x + 130 * s, t: boss.y - 85 * s, b: boss.y + 85 * s }; }
+function unread() { return Math.max(0, Math.round(boss.hp / boss.maxHp * 9999)); }
+function updOutlook(dt) {
+  const b = boss; b.st += dt; b.anim += dt; b.flash -= dt;
+  const ph = outlookPhase(), dx = P.x - b.x;
+  b.facing = dx > 0 ? 1 : -1;
+  b.mouth = Math.max(0, b.mouth - dt * 3);
+  switch (b.state) {
+    case 'emerge':
+      b.scale = Math.min(1, b.scale + dt * 1.6); b.y = lerp(b.y, b.baseY, dt * 2.2);
+      if (b.st > .9) { oSet('hover'); word('ВХОДЯЩИЕ!', b.x, b.y - 120, '#ffe14d', 34); sfx.horn(); }
+      break;
+    case 'hover': {
+      const tx = ARENA_X + W / 2 + Math.sin(b.anim * .6) * 330;
+      b.x = lerp(b.x, tx, Math.min(1, dt * 1.3)); b.y = lerp(b.y, b.baseY + Math.sin(b.anim * 2) * 16, Math.min(1, dt * 3));
+      if (b.st > (ph === 3 ? .8 : ph === 2 ? 1.05 : 1.3)) {
+        const pool = ['mails', 'invites'];
+        if (ph >= 2) pool.push('replyall', 'swoopprep');
+        if (ph >= 3) pool.push('heads', 'heads');
+        let a; do { a = pick(pool); } while (a === b.last && pool.length > 1);
+        b.last = a; oSet(a);
+      }
+      break;
+    }
+    case 'mails': {
+      const n = ph === 1 ? 2 : 3;
+      for (let k = 0; k < n; k++) if (!b['v' + (k + 1)] && b.st > .3 + k * .35) { b['v' + (k + 1)] = 1; mailVolley(b, ph === 1 ? 3 : 4); }
+      if (b.st > .5 + n * .35) oSet('hover');
+      break;
+    }
+    case 'invites':
+      if (!b.v1 && b.st > .2) {
+        b.v1 = 1; b.mouth = 1; word('ПРИГЛАШЕНИЕ!', b.x, b.y - 110, '#bff3ff', 26);
+        const offs = ph >= 3 ? [-260, -130, 0, 130, 260] : [-150, 0, 150];
+        offs.forEach((o, i) => foes.push({ kind: 'invite', text: pick(['Встреча 9:00', 'Синк', 'Дейли', 'Статус', 'Ретро', 'Планёрка']), x: clamp(P.x + o, ARENA_X + 60, ARENA_X + W - 60), y: -50, vx: 0, vy: 0, w: 96, h: 70, grav: .45, life: 4, pop: true, warn: .7 + i * .08 }));
+      }
+      if (b.st > 1.5) oSet('hover');
+      break;
+    case 'replyall':
+      if (!b.v1 && b.st > .45) {
+        b.v1 = 1; b.mouth = 1; sfx.horn(); word('ОТВЕТИТЬ ВСЕМ!', b.x, b.y - 120, '#ff8fb1', 28);
+        const n = ph >= 3 ? 14 : 10;
+        for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; foes.push({ kind: 'mail', text: pick(['Re:', 'Fwd:', 'Re: Re:']), x: b.x, y: b.y, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, w: 44, h: 30, life: 4, pop: true }); }
+      }
+      if (b.st > 1.3) oSet('hover');
+      break;
+    case 'swoopprep':
+      b.x += Math.sin(b.st * 60) * 2;
+      if (!b.v1) { b.v1 = 1; word('!', b.x, b.y - 130, '#ffe14d', 60); }
+      if (b.st > .75) { oSet('swoop'); b.vx = (dx > 0 ? 1 : -1) * 760; }
+      break;
+    case 'swoop':
+      b.contact = true; b.y = lerp(b.y, GROUND - 110, Math.min(1, dt * 6)); b.x += b.vx * dt;
+      if (b.x < ARENA_X + 110 || b.x > ARENA_X + W - 110 || b.st > 1.8) { b.x = clamp(b.x, ARENA_X + 110, ARENA_X + W - 110); oSet('rise'); }
+      break;
+    case 'rise':
+      b.y = lerp(b.y, b.baseY, Math.min(1, dt * 3));
+      if (b.st > .8) oSet('hover');
+      break;
+    case 'heads':
+      b.heads = Math.min(1, b.st * 2.5);
+      if (b.st > .5) for (let k = 0; k < 3; k++) {
+        const key = 'h' + k; b[key] = (b[key] || 0) - dt;
+        if (b[key] <= 0) { b[key] = rnd(.9, 1.4); const hp2 = headPos(b, k); officePhrase({ x: hp2.x, facing: dx > 0 ? 1 : -1 }, pick(STAKE_PHRASES), hp2.y); }
+      }
+      if (b.st > 3.4) { b.heads = 0; b.h0 = b.h1 = b.h2 = 0; oSet('hover'); }
+      break;
+    case 'defeated':
+      break;
+  }
+  if (b.state !== 'heads') b.heads = Math.max(0, b.heads - dt * 3);
+  if (b.contact && state === 'play' && overlap(outlookBox(), pBox())) hurtPlayer(b.x);
+}
+function headPos(b, k) {
+  const a = (-.9 + k * .9) + Math.sin(b.anim * 3 + k) * .12, len = 120 * b.heads;
+  return { x: b.x + Math.sin(a) * len * 1.3, y: b.y - 80 - Math.cos(a) * len };
+}
+function mailVolley(b, n) {
+  b.mouth = 1; sfx.shoot();
+  const base = Math.atan2(P.y - 140 - b.y, P.x - b.x);
+  for (let i = 0; i < n; i++) {
+    const a = base + (i - (n - 1) / 2) * .16;
+    foes.push({ kind: 'mail', text: pick(['Re:', 'Fwd:', 'СРОЧНО', '!!!', 'Re: Re:']), x: b.x, y: b.y + 20, vx: Math.cos(a) * 330, vy: Math.sin(a) * 330, w: 44, h: 30, life: 4, pop: true });
+  }
+}
+function outlookHit(s) {
+  const b = boss;
+  if (!b || b.state === 'emerge' || b.state === 'defeated') return false;
+  const bx = outlookBox();
+  if (s.x + s.r > bx.l && s.x - s.r < bx.r && s.y + s.r > bx.t && s.y - s.r < bx.b) {
+    b.hp = Math.max(0, b.hp - (s.dmg || 1) * 3); b.flash = .08;
+    if (!s.splash && Math.random() < .3) word(pick(['ПРОЧИТАНО!', 'В АРХИВ!', 'СПАМ!', 'УДАЛЕНО!']), s.x, s.y - 20, pick(['#bff3ff', '#ffe14d', '#ffc2de']), 24);
+    if (b.hp <= 0) startEnding2();
+    return true;
+  }
+  return false;
+}
+
+/* ----- level 2 ending: Inbox Zero ----- */
+function startEnding2() {
+  oSet('defeated'); boss.contact = false;
+  state = 'ending'; endT = 0; P.ctrl = false; foes = []; shots = [];
+  music.song = null; sfx.happy(); cam.shake = 8; hitstop = .3;
+  for (let i = 0; i < 60; i++) part({ x: boss.x, y: boss.y, vx: rnd(-420, 420), vy: rnd(-520, 80), g: G * .25, life: 2.5, max: 2.5, size: rnd(4, 8), kind: 'confetti', color: pick(['#ff5c8a', '#ffe14d', '#46cfc2', '#bff3ff', '#ff9a5c']), rot: rnd(0, 6), vr: rnd(-12, 12) });
+}
+function updEnding2(dt) {
+  endT += dt;
+  const b = boss;
+  b.anim += dt;
+  b.scale = lerp(b.scale, .32, Math.min(1, dt * 2.5));
+  const tx = P.x + P.facing * 70 + Math.cos(endT * 2.4) * 40, ty = P.y - 300 + Math.sin(endT * 4.8) * 22;
+  b.x = lerp(b.x, tx, Math.min(1, dt * 2)); b.y = lerp(b.y, ty, Math.min(1, dt * 2));
+  P.vx *= .85; P.x += P.vx * dt;
+  if (endT > 1.4 && P.pose !== 'hug') { P.pose = 'hug'; music.play('win'); sfx.happy(); }
+  if (endT > 1.4 && Math.random() < dt * 14) part({ x: P.x + rnd(-300, 300), y: cam.y - 20, vx: rnd(-40, 40), vy: rnd(60, 160), g: 40, life: 4, max: 4, size: rnd(4, 8), kind: 'confetti', color: pick(['#ff5c8a', '#ffe14d', '#46cfc2', '#bff3ff', '#ff9a5c']), rot: rnd(0, 6), vr: rnd(-10, 10) });
+  cam.zoom = lerp(cam.zoom, endT > 1.4 ? 1.35 : 1, Math.min(1, dt * 1.6));
+  cam.fx = P.x - cam.x; cam.fy = GROUND - 140;
+  if (endT > 8 && anyStart()) { level = 1; startTitle(); }
+}
 
 /* ---------------- particles ---------------- */
 function part(o) { parts.push(Object.assign({ x: 0, y: 0, vx: 0, vy: 0, life: 1, max: 1, g: 0, rot: 0, vr: 0, size: 6, kind: 'spark', color: '#fff' }, o)); }
@@ -324,8 +646,13 @@ function updatePlayer(dt) {
     const sx = p.x - cam.x + p.facing * 12, sy = p.y - 188;
     p.facing = mouse.x >= sx ? 1 : -1;
     p.aim = clamp(Math.atan2(mouse.y - sy, Math.abs(mouse.x - sx)), -1.25, 1.1);
-    if ((mouse.down || keys.KeyJ) && p.cool <= 0) shoot();
-    if ((mouse.rclicked || pressed.KeyE) && boss && boss.state !== 'tamed' && p.treatCool <= 0) throwTreat();
+    if (level === 2) {
+      if (pressed.Digit1) p.weapon = 0; if (pressed.Digit2) p.weapon = 1; if (pressed.Digit3) p.weapon = 2;
+      if (pressed.KeyQ || mouse.wheel > 0) p.weapon = (p.weapon + 1) % 3;
+      if (mouse.wheel < 0) p.weapon = (p.weapon + 2) % 3;
+    }
+    if ((mouse.down || keys.KeyJ) && p.cool <= 0) (level === 2 ? shootWine : shoot)();
+    if ((mouse.rclicked || pressed.KeyE) && boss && boss.kind !== 'outlook' && boss.state !== 'tamed' && p.treatCool <= 0) throwTreat();
   }
 }
 function muzzle() {
@@ -427,6 +754,7 @@ function updEnt(e, dt) {
       }
       if (e.x < cam.x - 500) e.dead = true;
       break;
+    default: updOfficeEnt(e, dt, dx, adx);
   }
   if (e.harm && !e.trapped && state === 'play') { const b = entBox(e); if (b && overlap(b, pBox())) hurtPlayer(e.x); }
 }
@@ -444,7 +772,7 @@ function phrase(e) {
 
 /* ---------------- boss: Рокки ---------------- */
 function spawnBoss() {
-  boss = { x: ARENA_X + 1000, y: GROUND, vx: 0, vy: 0, facing: -1, state: 'perch', st: 0, f: 0, anim: 0, onGround: true,
+  boss = { kind: 'rocky', x: ARENA_X + 1000, y: GROUND, vx: 0, vy: 0, facing: -1, state: 'perch', st: 0, f: 0, anim: 0, onGround: true,
     mouth: 0, flash: 0, crouch: 0, contact: false, last: '', target: null, mood: 0, sit: 0, tailBoost: 0 };
 }
 function bossPhase() { return boss.f >= 70 ? 3 : boss.f >= 35 ? 2 : 1; }
@@ -624,20 +952,27 @@ function updEnding(dt) {
   P.vy += G * dt; P.x += P.vx * dt; P.y = Math.min(GROUND, P.y + P.vy * dt); if (P.y >= GROUND) P.vy = 0;
   if (P.onGround && Math.abs(P.vx) > 30) P.ph += Math.abs(P.vx) * dt * .045; else P.ph = 0;
   P.aim = .3;
-  if (hugT > 6.5 && anyStart()) { startGame(); }
+  if (hugT > 6.5 && anyStart()) { toStory(2); }
 }
 
 /* ---------------- flow ---------------- */
 function startGame() {
-  buildLevel(); resetPlayer(300); checkpoint = 300; cam.x = 0; cam.zoom = 1;
-  state = 'play'; stateT = 0; music.play('town');
+  buildLevel(); resetPlayer(300); checkpoint = 300; cam.x = 0; cam.zoom = 1; cam.lock = false;
+  state = 'play'; stateT = 0; music.play(LEVELS[level].song);
+}
+function startTitle() {
+  buildLevel(); resetPlayer(300); cam.zoom = 1; cam.lock = false; state = 'title'; stateT = 0; music.play(LEVELS[level].song);
+}
+function toStory(lv) {
+  level = lv; buildLevel(); resetPlayer(300); cam.zoom = 1; cam.lock = false; state = 'story'; stateT = 0; music.play(LEVELS[level].song);
 }
 function respawn() {
   const atBoss = cam.lock;
   resetPlayer(atBoss ? ARENA_X + 220 : checkpoint);
   foes = []; shots = [];
-  if (atBoss && boss) { boss.f = Math.max(0, boss.f - 10); bossSet('idle'); boss.x = ARENA_X + 1000; boss.vx = 0; }
-  state = 'play'; music.play(atBoss ? 'boss' : 'town');
+  if (atBoss && boss && boss.kind === 'outlook') { boss.hp = Math.min(boss.maxHp, boss.hp + 40); oSet('hover'); }
+  else if (atBoss && boss) { boss.f = Math.max(0, boss.f - 10); bossSet('idle'); boss.x = ARENA_X + 1000; boss.vx = 0; }
+  state = 'play'; music.play(atBoss ? 'boss' : LEVELS[level].song);
 }
 
 /* ---------------- update ---------------- */
@@ -647,7 +982,7 @@ function update(dt) {
   switch (state) {
     case 'title':
       cam.x = (time * 40) % 3000;
-      if (anyStart()) { state = 'story'; stateT = 0; music.play('town'); }
+      if (anyStart()) { state = 'story'; stateT = 0; music.play(LEVELS[level].song); }
       return;
     case 'story':
       cam.x = (time * 40) % 3000;
@@ -669,70 +1004,91 @@ function update(dt) {
     runTime += dt;
     if (pressed.KeyP || pressed.Escape) { state = 'paused'; return; }
     updatePlayer(dt);
-    if (P.x > 4040 && checkpoint < 4040) { checkpoint = 4100; word('ЧЕКПОИНТ', P.x, P.y - 270, '#bff3ff', 26); }
+    if (P.x > LEVELS[level].cp && checkpoint < LEVELS[level].cp) { checkpoint = LEVELS[level].cpX; word('ЧЕКПОИНТ', P.x, P.y - 270, '#bff3ff', 26); }
     if (!cam.lock && P.x > ARENA_X + 330) {
-      cam.lock = true; spawnBoss(); state = 'bossintro'; stateT = 0; music.song = null; foes = [];
+      cam.lock = true; (level === 2 ? spawnOutlook : spawnBoss)(); state = 'bossintro'; stateT = 0; music.song = null; foes = [];
       ents.forEach(e => { e.dead = true; });
     }
   }
-  if (state === 'ending') updEnding(dt);
+  if (state === 'ending') (level === 2 ? updEnding2 : updEnding)(dt);
 
   for (const e of ents) updEnt(e, dt);
   ents = ents.filter(e => !e.dead);
-  if (boss) updBoss(dt);
+  if (boss) (boss.kind === 'outlook' ? updOutlook : updBoss)(dt);
   updShots(dt); updFoes(dt); updItems(dt); updTreats(dt); updParts(dt); updCam(dt);
   // ambient autumn leaves
-  if (Math.random() < dt * 4) part({ x: cam.x + rnd(0, W + 200), y: cam.y - 20, vx: rnd(-60, -10), vy: rnd(40, 80), life: 9, max: 9, size: rnd(6, 10), kind: 'leaf', color: pick(['#e8902f', '#f2b632', '#c8502f', '#d9a441']), rot: rnd(0, 6), vr: rnd(-3, 3) });
+  if (level === 1 && Math.random() < dt * 4) part({ x: cam.x + rnd(0, W + 200), y: cam.y - 20, vx: rnd(-60, -10), vy: rnd(40, 80), life: 9, max: 9, size: rnd(6, 10), kind: 'leaf', color: pick(['#e8902f', '#f2b632', '#c8502f', '#d9a441']), rot: rnd(0, 6), vr: rnd(-3, 3) });
+}
+function damageEnt(e, dmg) {
+  e.hp -= dmg; e.flash = .1;
+  if (e.hp > 0) return;
+  if (e.type === 'baba') {
+    if (!e.calm) { e.calm = true; e.talk = 2; foes = foes.filter(f => f.kind !== 'phrase' || Math.abs(f.x - e.x) > 900); hearts(e.x, e.y - 130, 6); sfx.happy(); part({ x: e.x, y: e.y - 170, vy: -10, life: 2.4, max: 2.4, kind: 'say', text: pick(['Әй, матур кыз!', 'Исән-сау йөр, кызым!', 'Яшәгә сәлам әйт!']), size: 20 }); }
+  } else if (!calmOffice(e)) {
+    e.trapped = true; e.tt = 0; e.harm = false; sfx.trap(); hitstop = .04; cam.shake = 4;
+    word(pick(level === 2 ? ['ГОТОВО!', 'ЗАКРЫТО!', 'ДЗЫНЬ!', 'ПУФ!'] : ['ПУФ!', 'БУЛЬК!', 'ХЛОП!', 'ВЖУХ!']), e.x, e.y - 60, pick(['#ffe14d', '#bff3ff', '#ffc2de']));
+  }
 }
 function updShots(dt) {
   for (const s of shots) {
-    s.life -= dt; s.wob += dt * 8;
-    const k = Math.pow(.42, dt); s.vx *= k; s.vy = s.vy * k - 70 * dt;
-    s.x += s.vx * dt; s.y += s.vy * dt + Math.sin(s.wob) * .4;
-    if (s.life <= 0 || s.y > GROUND - 4) { s.dead = true; popFx(s.x, s.y, 4); continue; }
+    s.life -= dt;
+    if (!s.kind) {
+      s.wob += dt * 8;
+      const k = Math.pow(.42, dt); s.vx *= k; s.vy = s.vy * k - 70 * dt;
+      s.x += s.vx * dt; s.y += s.vy * dt + Math.sin(s.wob) * .4;
+    } else {
+      s.vy += (s.kind === 'red' ? G * .75 : s.kind === 'cork' ? 380 : 300) * dt;
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      if (s.kind === 'cork' && Math.random() < .6) part({ x: s.x, y: s.y, vx: rnd(-30, 30), vy: rnd(-40, 10), life: .35, max: .35, size: rnd(1.5, 3), kind: 'spark', color: '#fff6c8' });
+    }
+    if (s.life <= 0 || s.y > GROUND - 4) {
+      s.dead = true;
+      if (s.kind === 'red') wineSplash(s.x, Math.min(s.y, GROUND - 6));
+      else if (s.kind) splashFx(s.x, Math.min(s.y, GROUND - 4), 3);
+      else popFx(s.x, s.y, 4);
+      continue;
+    }
     let hit = false;
     for (const e of ents) {
-      if (e.trapped || e.dead) continue;
+      if (e.trapped || e.dead || e.calm) continue;
       const b = entBox(e); if (!b) continue;
-      if (s.x + s.r > b.l && s.x - s.r < b.r && s.y + s.r > b.t && s.y - s.r < b.b) {
-        hit = true; e.hp -= s.tiny ? .5 : 1; e.flash = .1;
-        if (e.hp <= 0) {
-          if (e.type === 'baba') {
-            if (!e.calm) { e.calm = true; e.talk = 2; foes = foes.filter(f => f.kind !== 'phrase' || Math.abs(f.x - e.x) > 900); hearts(e.x, e.y - 130, 6); sfx.happy(); part({ x: e.x, y: e.y - 170, vy: -10, life: 2.4, max: 2.4, kind: 'say', text: pick(['Әй, матур кыз!', 'Исән-сау йөр, кызым!', 'Яшәгә сәлам әйт!']), size: 20 }); }
-          } else {
-            e.trapped = true; e.tt = 0; e.harm = false; sfx.trap(); hitstop = .04; cam.shake = 4;
-            word(pick(['ПУФ!', 'БУЛЬК!', 'ХЛОП!', 'ВЖУХ!']), e.x, e.y - 60, pick(['#ffe14d', '#bff3ff', '#ffc2de']));
-          }
-        }
-        break;
-      }
+      if (s.x + s.r > b.l && s.x - s.r < b.r && s.y + s.r > b.t && s.y - s.r < b.b) { hit = true; damageEnt(e, s.dmg ?? (s.tiny ? .5 : 1)); break; }
     }
     if (!hit) for (const f of foes) {
-      if (!f.pop || f.dead) continue;
+      if (!f.pop || f.dead || f.warn > 0) continue;
       if (Math.abs(s.x - f.x) < f.w / 2 + s.r && Math.abs(s.y - f.y) < f.h / 2 + s.r) {
         hit = true; f.dead = true; popFx(f.x, f.y, 8); sfx.pop();
         if (f.kind === 'phrase') word('ЛОП!', f.x, f.y, '#ffffff', 24);
+        if (f.kind === 'mail' || f.kind === 'invite') word(pick(['УДАЛЕНО', 'ОТКЛОНЕНО', 'В АРХИВ']), f.x, f.y, '#bff3ff', 18);
         break;
       }
     }
-    if (!hit) hit = bubbleHitsBoss(s);
-    if (hit) { s.dead = true; popFx(s.x, s.y, 6); sfx.pop(); }
+    if (!hit && boss) hit = boss.kind === 'outlook' ? outlookHit(s) : bubbleHitsBoss(s);
+    if (hit) {
+      s.dead = true;
+      if (s.kind === 'red') wineSplash(s.x, s.y);
+      else if (s.kind) splashFx(s.x, s.y, 4);
+      else popFx(s.x, s.y, 6);
+      sfx.pop();
+    }
   }
   shots = shots.filter(s => !s.dead);
 }
 function updFoes(dt) {
   const pb = pBox();
   for (const f of foes) {
+    if (f.warn > 0) { f.warn -= dt; continue; }
     f.life -= dt;
     if (f.grav) f.vy += G * f.grav * dt;
     f.x += f.vx * dt; f.y += f.vy * dt;
     if (f.rot !== undefined) f.rot += dt * 12;
     if (f.kind === 'wave') { f.h = 78 + Math.sin(time * 20) * 6; if (Math.random() < .6) part({ x: f.x + rnd(-20, 30), y: GROUND - f.h * .8, vx: rnd(-100, 100), vy: rnd(-300, -120), g: G * .6, life: .5, max: .5, size: rnd(3, 6), kind: 'drop', color: '#9fd6f5' }); }
+    if ((f.kind === 'invite' || f.kind === 'paper') && f.y > GROUND - 20) { f.dead = true; dust(f.x, GROUND, 4); sfx.thud(); }
     if ((f.kind === 'drop' || f.kind === 'slipper') && f.y > GROUND - 6) {
       f.dead = true;
       if (f.kind === 'drop') splashFx(f.x, GROUND - 2, 3); else { dust(f.x, GROUND, 3); sfx.thud(); }
     }
-    if (f.life <= 0 || f.x < cam.x - 300 || f.x > cam.x + W + 300) f.dead = true;
+    if (f.life <= 0 || f.x < cam.x - 300 || f.x > cam.x + W + 300 || f.y > H + 60) f.dead = true;
     if (f.dead) continue;
     const fb = f.kind === 'wave' ? { l: f.x - f.w / 2, r: f.x + f.w / 2, t: GROUND - f.h, b: GROUND } : { l: f.x - f.w / 2, r: f.x + f.w / 2, t: f.y - f.h / 2, b: f.y + f.h / 2 };
     if (state === 'play' && overlap(fb, pb) && P.inv <= 0) {
@@ -748,7 +1104,7 @@ function updItems(dt) {
     if (it.got) continue;
     if (Math.abs(P.x - it.x) < 38 && Math.abs(P.y - 120 - it.y) < 120) {
       it.got = true;
-      if (it.type === 'daisy') { daisies++; sfx.collect(); part({ x: it.x, y: it.y, vy: -80, life: .7, max: .7, kind: 'text', text: '+1', color: '#fff3a8', size: 22, rot: 0 }); popFx(it.x, it.y, 6); }
+      if (it.type === 'daisy' || it.type === 'grape') { daisies++; sfx.collect(); part({ x: it.x, y: it.y, vy: -80, life: .7, max: .7, kind: 'text', text: '+1', color: '#fff3a8', size: 22, rot: 0 }); popFx(it.x, it.y, 6); }
       else { P.hp = Math.min(P.maxHp, P.hp + 1); sfx.heal(); hearts(it.x, it.y, 4); }
     }
   }
@@ -923,7 +1279,8 @@ function drawProp(p) {
     case 'stop': drawStop(p); break;
     case 'pipe': drawPipe(p); break;
     case 'gate': drawGate(); break;
-    case 'checkpoint': drawFlag(); break;
+    case 'checkpoint': drawFlag(p); break;
+    default: drawOfficeProp(p); break;
     case 'arena': drawArenaBack(); break;
   }
   ctx.restore();
@@ -1042,9 +1399,9 @@ function drawGate() {
   // string lights
   for (let k = 0; k < 12; k++) { const t = k / 11, lx = lerp(0, 300, t), ly = GROUND - 160 + Math.sin(t * Math.PI) * 20; ell(lx, ly, 5, 6); ctx.fillStyle = (k + Math.floor(time * 3)) % 2 ? '#ffe14d' : '#ff8fb1'; ctx.fill(); }
 }
-function drawFlag() {
+function drawFlag(p) {
   rr(0, GROUND - 150, 6, 150, 2); fs('#6d625c', 3);
-  ctx.beginPath(); ctx.moveTo(6, GROUND - 148); ctx.lineTo(60 + Math.sin(time * 6) * 4, GROUND - 132); ctx.lineTo(6, GROUND - 114); ctx.closePath(); fs(checkpoint >= 4040 ? '#46cfc2' : '#ff7fb2', 3);
+  ctx.beginPath(); ctx.moveTo(6, GROUND - 148); ctx.lineTo(60 + Math.sin(time * 6) * 4, GROUND - 132); ctx.lineTo(6, GROUND - 114); ctx.closePath(); fs(checkpoint >= (p ? p.x : 4040) ? '#46cfc2' : '#ff7fb2', 3);
 }
 function drawArenaBack() {
   // his family house: grey cinder blocks, sandstone trim, maroon doors, red corrugated roof
@@ -1216,6 +1573,7 @@ function drawDiana(x, y, o) {
       ctx.drawImage(hi, sx, 0, cw + 1.2, hh, -sp.ax * w + sx * sc, -h + off * sc, (cw + 1.2) * sc, hh * sc);
     }
   }
+  if (level === 2 && sp !== DSPR.hug && !sp.bottle) drawBottleOverlay(sp, w, h);
   ctx.restore();
 }
 function drawDianaVector(x, y, o) {
@@ -1810,8 +2168,8 @@ function drawBaba(e) {
 }
 function drawPuddle(e) {
   const x = e.x - cam.x;
-  ell(x + e.w / 2, GROUND + 10, e.w / 2, 11); fs('#4f7fa8', 3.5);
-  ell(x + e.w / 2, GROUND + 8, e.w / 2 - 10, 6); ctx.fillStyle = '#ffb979'; ctx.globalAlpha = .55; ctx.fill(); ctx.globalAlpha = 1;
+  ell(x + e.w / 2, GROUND + 10, e.w / 2, 11); fs(e.coffee ? '#5a3420' : '#4f7fa8', 3.5);
+  ell(x + e.w / 2, GROUND + 8, e.w / 2 - 10, 6); ctx.fillStyle = e.coffee ? '#a9714a' : '#ffb979'; ctx.globalAlpha = .55; ctx.fill(); ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(x + e.w * .3 + Math.sin(time * 2) * 6, GROUND + 6, 18, 2);
 }
 function drawTaxi(e) {
@@ -1878,6 +2236,7 @@ function drawShot(s) {
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(x - r * .35, s.y - r * .4, r * .25, r * .15, -.6, 0, 7); ctx.fill();
 }
 function drawFoe(f) {
+  if (drawOfficeFoe(f)) return;
   const x = f.x - cam.x;
   switch (f.kind) {
     case 'phrase':
@@ -1920,6 +2279,8 @@ function drawPart(p) {
       ctx.globalAlpha = k * .8; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(x, p.y, p.size * (1.5 - k * .5), 0, 7); ctx.fill(); ctx.globalAlpha = 1; break;
     case 'drop':
       ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(x, p.y, p.size * .6, 0, 7); ctx.fill(); break;
+    case 'confetti':
+      ctx.save(); ctx.translate(x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = Math.min(1, k * 3); ctx.fillStyle = p.color; ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2); ctx.restore(); ctx.globalAlpha = 1; break;
     case 'leaf':
       ctx.save(); ctx.translate(x, p.y); ctx.rotate(p.rot); ell(0, 0, p.size, p.size * .5); ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = 'rgba(27,20,17,.6)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore(); break;
     case 'heart':
@@ -1940,6 +2301,371 @@ function drawPart(p) {
   }
 }
 
+/* ---------- level 2 drawing: office ---------- */
+function drawOffice() {
+  // wall
+  ctx.fillStyle = '#ddd5c9'; ctx.fillRect(0, 0, W, GROUND);
+  // panoramic windows onto an evening Moscow skyline (parallax)
+  const par = .45, off = cam.x * par, step = 430;
+  const i0 = Math.floor(off / step) - 1;
+  for (let i = i0; i < i0 + 5; i++) {
+    const x = i * step - off + 60, wy = 96, ww = 330, wh = 330;
+    ctx.save(); rr(x, wy, ww, wh, 4); ctx.clip();
+    const g = ctx.createLinearGradient(0, wy, 0, wy + wh);
+    g.addColorStop(0, '#2f3656'); g.addColorStop(.5, '#7a5f86'); g.addColorStop(.85, '#ee9a5e'); g.addColorStop(1, '#ffcf7a');
+    ctx.fillStyle = g; ctx.fillRect(x, wy, ww, wh);
+    // skyline: far blocks + a few glass towers
+    const sk = cam.x * .12;
+    for (let k = -2; k < 16; k++) {
+      const bx = k * 46 - (sk % 46) + x - 40, seed = k + Math.floor(sk / 46);
+      const bh = 60 + hash(seed) * 120 + (hash(seed + 9) > .86 ? 120 : 0);
+      ctx.fillStyle = hash(seed + 3) > .5 ? '#3b3452' : '#463d5f';
+      ctx.fillRect(bx, wy + wh - bh, 40, bh);
+      ctx.fillStyle = 'rgba(255,214,140,.75)';
+      for (let yy = wy + wh - bh + 8; yy < wy + wh - 6; yy += 12) for (let xx = bx + 6; xx < bx + 36; xx += 10) if (hash(xx * 3 + yy) > .55) ctx.fillRect(xx, yy, 4, 5);
+      if (hash(seed + 9) > .86) { ctx.fillStyle = 'rgba(160,190,230,.35)'; ctx.fillRect(bx + 4, wy + wh - bh, 8, bh); }
+    }
+    ctx.restore();
+    // frame + mullions
+    rr(x, wy, ww, wh, 4); ink(5); ctx.stroke();
+    ctx.fillStyle = '#4a4550';
+    for (const mx of [ww / 3, ww * 2 / 3]) ctx.fillRect(x + mx - 3, wy, 6, wh);
+    ctx.fillRect(x, wy + wh * .62, ww, 5);
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.beginPath(); ctx.moveTo(x + 30, wy); ctx.lineTo(x + 90, wy); ctx.lineTo(x + 20, wy + wh); ctx.lineTo(x - 40, wy + wh); ctx.fill();
+  }
+  // ceiling with light panels
+  ctx.fillStyle = '#c9c0b4'; ctx.fillRect(0, 0, W, 64);
+  ctx.fillStyle = INK; ctx.fillRect(0, 62, W, 3);
+  const lo = (cam.x * .85) % 260;
+  for (let x = -lo; x < W; x += 260) { rr(x + 40, 20, 150, 18, 4); ctx.fillStyle = '#fff6dc'; ctx.fill(); ink(2.5); ctx.stroke(); const lg = ctx.createLinearGradient(0, 38, 0, 200); lg.addColorStop(0, 'rgba(255,240,200,.28)'); lg.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = lg; ctx.beginPath(); ctx.moveTo(x + 40, 38); ctx.lineTo(x + 190, 38); ctx.lineTo(x + 240, 200); ctx.lineTo(x - 10, 200); ctx.fill(); }
+  // wainscot
+  ctx.fillStyle = '#b9a994'; ctx.fillRect(0, 450, W, GROUND - 450);
+  ctx.fillStyle = INK; ctx.fillRect(0, 448, W, 3);
+  ctx.fillStyle = 'rgba(27,20,17,.15)'; const wo = cam.x % 90; for (let x = -wo; x < W; x += 90) ctx.fillRect(x, 452, 2, GROUND - 452);
+  // columns with wine posters
+  const co = cam.x, cstep = 900, c0 = Math.floor(co / cstep) - 1;
+  for (let i = c0; i < c0 + 3; i++) {
+    const x = i * cstep - co + 380;
+    rr(x, 64, 70, GROUND - 64, 2); fs('#e9e2d6', 3);
+    rr(x + 8, 180, 54, 80, 3); fs(i % 2 ? '#7a1a2c' : '#2f5d3a', 2.5);
+    bodyText(i % 2 ? 'ВИНО' : 'SIMPLE', x + 35, 205, 11, '#f6e7c8', 'center', 900);
+    rr(x + 27, 220, 16, 32, 4); ctx.fillStyle = '#f6e7c8'; ctx.fill();
+  }
+  // floor: carpet tiles
+  ctx.fillStyle = '#5d6774'; ctx.fillRect(0, GROUND, W, H - GROUND);
+  ctx.fillStyle = INK; ctx.fillRect(0, GROUND - 1, W, 4);
+  ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 2;
+  for (let r = 0; r < 4; r++) {
+    const y = GROUND + 3 + r * 30; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    const o = (cam.x + r * 30) % 60; for (let x = -o; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 30); ctx.stroke(); }
+  }
+}
+function drawOfficeProp(p) {
+  switch (p.t) {
+    case 'reception': {
+      rr(-10, 150, 440, GROUND - 150, 4); fs('#efe9df', 3);
+      rr(30, 190, 360, 70, 8); fs('#6e1430', 4);
+      comicText('SIMPLE', 210, 226, 40, '#f6e7c8', 0, 6);
+      for (const px of [40, 380]) { rr(px - 14, GROUND - 70, 28, 70, 4); fs('#c86f3a', 3); ell(px, GROUND - 92, 30, 34); fs('#3f7a4f', 3); ell(px - 10, GROUND - 110, 16, 20); fs('#4f8f5f', 2.5); }
+      rr(110, GROUND - 120, 220, 120, 6); fs('#8b5a3c', 4);
+      rr(100, GROUND - 130, 240, 16, 4); fs('#e9e2d6', 3);
+      bodyText('РЕСЕПШН', 220, GROUND - 70, 18, '#f6e7c8', 'center', 900);
+      break;
+    }
+    case 'note': {
+      ctx.font = `700 18px ${FB}`;
+      const w = Math.max(...p.lines.map(l => ctx.measureText(l).width)) + 40, h = p.lines.length * 26 + 26;
+      rr(-w / 2 - 14, GROUND - 330, w + 28, h + 28, 6); fs('#c9b28f', 3);
+      ctx.save(); ctx.translate(0, GROUND - 316 + h / 2); ctx.rotate(-.025);
+      rr(-w / 2, -h / 2, w, h, 3); fs('#fff07a', 3);
+      p.lines.forEach((l, i) => bodyText(l, 0, -h / 2 + 24 + i * 26, 18, INK));
+      ctx.restore();
+      ell(0, GROUND - 330 + 6, 6, 6); fs('#ff5c8a', 2);
+      break;
+    }
+    case 'desk': {
+      const y = GROUND - 92;
+      // chair
+      rr(p.w * .5 - 30, GROUND - 110, 60, 50, 10); fs('#3a3f4a', 3);
+      rr(p.w * .5 - 4, GROUND - 60, 8, 44, 2); fs('#2a2e36', 2.5);
+      ctx.beginPath(); ctx.moveTo(p.w * .5 - 34, GROUND - 4); ctx.lineTo(p.w * .5 + 34, GROUND - 4); ink(6); ctx.stroke();
+      for (const lx of [10, p.w - 18]) { rr(lx, y + 10, 8, 82, 2); fs('#8d8f96', 2.5); }
+      rr(-6, y, p.w + 12, 14, 3); fs('#e8dcc8', 3.5);
+      // monitor
+      rr(p.w * .5 - 54, y - 92, 108, 72, 6); fs('#25222b', 3.5);
+      rr(p.w * .5 - 48, y - 86, 96, 60, 3); ctx.fillStyle = '#3b6fb6'; ctx.fill();
+      ctx.fillStyle = '#fff'; for (let k = 0; k < 4; k++) ctx.fillRect(p.w * .5 - 40, y - 80 + k * 12, 50 + (k % 2) * 20, 5);
+      ctx.fillStyle = '#ff5c8a'; ctx.fillRect(p.w * .5 + 22, y - 80, 18, 18);
+      rr(p.w * .5 - 8, y - 20, 16, 20, 2); fs('#25222b', 2.5);
+      rr(18, y - 20, 22, 20, 4); fs('#fff', 2.5); ctx.fillStyle = '#7a4a2a'; ctx.fillRect(20, y - 18, 18, 5);
+      break;
+    }
+    case 'cabinet': {
+      rr(0, GROUND - p.h, 70, p.h, 3); fs('#9aa0a8', 3.5);
+      for (let k = 0; k < 3; k++) { rr(6, GROUND - p.h + 8 + k * (p.h - 16) / 3, 58, (p.h - 16) / 3 - 6, 2); ink(2.5); ctx.stroke(); rr(26, GROUND - p.h + 16 + k * (p.h - 16) / 3, 18, 5, 2); fs('#5d6168', 1.5); }
+      break;
+    }
+    case 'rack': {
+      rr(0, GROUND - p.h, p.w, p.h, 3); fs('#8b5a3c', 3.5);
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) {
+        const cx = 20 + c * 32, cy = GROUND - p.h + 24 + r * 38;
+        ell(cx, cy, 13, 13); fs('#2a1d18', 2.5);
+        ell(cx, cy, 7, 7); ctx.fillStyle = pick2(['#3e0f1c', '#2f5d3a', '#f2a6b8', '#c9a54a'], r * 5 + c); ctx.fill();
+      }
+      bodyText('ВИННЫЙ ЗАПАС', p.w / 2, GROUND - p.h - 14, 13, '#6e1430', 'center', 900);
+      break;
+    }
+    case 'meeting': {
+      ctx.save(); ctx.globalAlpha = .9;
+      rr(0, 110, p.w, GROUND - 110, 4); ctx.fillStyle = 'rgba(190,225,240,.28)'; ctx.fill(); ink(4); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = 'rgba(27,20,17,.25)'; ctx.fillRect(40, GROUND - 120, p.w - 80, 12);
+      for (let k = 0; k < 4; k++) { rr(56 + k * ((p.w - 140) / 3), GROUND - 150, 26, 34, 6); ctx.fillStyle = 'rgba(27,20,17,.22)'; ctx.fill(); }
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(20, 120, 10, GROUND - 130); ctx.fillRect(p.w - 120, 120, 6, GROUND - 130);
+      rr(p.w / 2 - 110, 70, 220, 40, 6); fs('#6e1430', 3.5);
+      bodyText('Переговорка «' + p.name + '»', p.w / 2, 90, 17, '#f6e7c8', 'center', 900);
+      break;
+    }
+    case 'kitchen': {
+      rr(p.w + 10, GROUND - 230, 90, 230, 6); fs('#e9edf0', 3.5); ctx.fillStyle = INK; ctx.fillRect(p.w + 10, GROUND - 150, 90, 3); rr(p.w + 80, GROUND - 210, 6, 40, 2); fs('#9aa0a8', 2);
+      rr(0, GROUND - 100, p.w, 100, 4); fs('#b07a4a', 3.5);
+      rr(-6, GROUND - 104, p.w + 12, 12, 3); fs('#e8e2d6', 3);
+      // coffee machine
+      rr(30, GROUND - 190, 74, 86, 8); fs('#2a2e36', 3.5); rr(44, GROUND - 176, 46, 22, 3); ctx.fillStyle = '#7fd1c6'; ctx.fill();
+      rr(54, GROUND - 140, 26, 18, 3); fs('#fff', 2.5);
+      rr(150, GROUND - 150, 60, 46, 6); fs('#c9433b', 3); bodyText('ЧАЙ', 180, GROUND - 127, 13, '#fff', 'center', 900);
+      rr(p.w / 2 - 50, GROUND - 270, 100, 34, 6); fs('#fff6dc', 3); bodyText('КУХНЯ', p.w / 2, GROUND - 253, 17, '#6e1430', 'center', 900);
+      break;
+    }
+    case 'gate2': {
+      rr(-10, 120, 330, 46, 8); fs('#6e1430', 4);
+      bodyText('РАБОЧЕЕ МЕСТО ДИАНЫ →', 155, 143, 18, '#f6e7c8', 'center', 900);
+      for (let k = 0; k < 12; k++) { const lx = k * 28, ly = 172 + Math.sin(k) * 4; ell(lx, ly, 5, 6); ctx.fillStyle = (k + Math.floor(time * 3)) % 2 ? '#ffe14d' : '#ff8fb1'; ctx.fill(); }
+      break;
+    }
+    case 'arena2': {
+      // Diana's own corner: big desk with the monitor the boss jumps out of
+      const dx = 760;
+      rr(dx, GROUND - 100, 300, 16, 4); fs('#e8dcc8', 3.5);
+      for (const lx of [dx + 10, dx + 280]) { rr(lx, GROUND - 84, 10, 84, 2); fs('#8d8f96', 2.5); }
+      rr(dx + 80, GROUND - 236, 150, 112, 8); fs('#25222b', 4);
+      rr(dx + 90, GROUND - 226, 130, 92, 4); ctx.fillStyle = boss && boss.kind === 'outlook' && boss.state !== 'defeated' ? '#1d4f9a' : '#3b6fb6'; ctx.fill();
+      if (boss && boss.state === 'defeated') bodyText('INBOX ZERO', dx + 155, GROUND - 180, 15, '#fff', 'center', 900);
+      rr(dx + 145, GROUND - 124, 20, 24, 2); fs('#25222b', 2.5);
+      // mug + photo + plant + bottle
+      rr(dx + 20, GROUND - 130, 30, 30, 5); fs('#fff', 2.5); bodyText('Г', dx + 35, GROUND - 115, 14, '#ff5c8a', 'center', 900);
+      rr(dx + 245, GROUND - 150, 34, 46, 3); fs('#c9a54a', 2.5); heartPath(dx + 262, GROUND - 124, 16); ctx.fillStyle = '#ff5c8a'; ctx.fill();
+      rr(dx - 70, GROUND - 60, 40, 60, 5); fs('#c86f3a', 3); ell(dx - 50, GROUND - 90, 34, 40); fs('#3f7a4f', 3);
+      rr(dx + 60, GROUND - 160, 16, 56, 5); fs('#3e0f1c', 2.5); rr(dx + 63, GROUND - 176, 10, 18, 3); fs('#7a1a2c', 2);
+      rr(dx + 40, 120, 220, 40, 6); fs('#fff6dc', 3); bodyText('Диана · Product Manager', dx + 150, 140, 15, '#6e1430', 'center', 900);
+      break;
+    }
+    case 'checkpoint': drawFlag(p); break;
+  }
+}
+function pick2(a, i) { return a[i % a.length]; }
+
+function drawClock(e) {
+  const x = e.x - cam.x, y = e.y, ring = e.ring > 0 ? Math.sin(time * 60) * 3 : 0;
+  ctx.save(); ctx.translate(x + ring, y); ctx.scale(e.facing, 1);
+  if (e.flash > 0) ctx.filter = 'brightness(1.45)';
+  const run = Math.abs(e.vx) > 30, t = e.t * 18;
+  for (const [lx, ph] of [[-10, 0], [10, Math.PI]]) { const sw = run ? Math.sin(t + ph) * 6 : 0; ctx.beginPath(); ctx.moveTo(lx, -12); ctx.lineTo(lx + sw, -2); ink(4); ctx.stroke(); ell(lx + sw + 3, -2, 6, 3); fs('#2a2224', 2); }
+  for (const bx of [-16, 16]) { ell(bx, -54, 9, 7); fs('#e0b13a', 3); }
+  ell(0, -34, 24, 24); fs('#d9343f', 3.5);
+  ell(0, -34, 18, 18); fs('#fff8ec', 2.5);
+  ctx.save(); ctx.translate(0, -34); ctx.rotate(time * 6); ctx.fillStyle = INK; ctx.fillRect(-1.2, -14, 2.4, 14); ctx.restore();
+  ctx.save(); ctx.translate(0, -34); ctx.rotate(time * .6); ctx.fillStyle = INK; ctx.fillRect(-1.6, -9, 3.2, 9); ctx.restore();
+  ell(-6, -40, 3, 3.4); ctx.fillStyle = INK; ctx.fill(); ell(6, -40, 3, 3.4); ctx.fill();
+  strokeLines([[-10, -46, -3, -43], [10, -46, 3, -43]], INK, 2);
+  if (e.ring > 0) { comicText('ДЗЫНЬ!', 0, -78, 14, '#ffe14d', -.1, 4); }
+  rr(-26, -12, 52, 14, 4); fs('#fff07a', 2); bodyText('ДЕДЛАЙН', 0, -5, 9, '#7a1a26', 'center', 900);
+  ctx.restore();
+}
+function drawTicket(e) {
+  const x = e.x - cam.x, y = e.y;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(e.t * 6) * .12 + (e.diving ? e.facing * .3 : 0));
+  if (e.flash > 0) ctx.filter = 'brightness(1.45)';
+  rr(-30, -20, 60, 40, 4); fs('#ffffff', 3);
+  ctx.fillStyle = '#2f6fd6'; ctx.fillRect(-28.5, -18.5, 57, 10);
+  bodyText('ЗАДАЧА-1337', 0, -13, 8, '#fff', 'center', 900);
+  ctx.save(); ctx.rotate(-.18); rr(-24, -4, 48, 16, 3); ctx.strokeStyle = '#d9343f'; ctx.lineWidth = 2.5; ctx.stroke(); bodyText('СРОЧНО', 0, 4, 11, '#d9343f', 'center', 900); ctx.restore();
+  // little wings
+  const f = Math.sin(e.t * 24) * 8;
+  ctx.beginPath(); ctx.moveTo(-30, -6); ctx.lineTo(-46, -14 - f); ctx.lineTo(-30, 4); ctx.closePath(); fs('#cfe1ff', 2);
+  ctx.beginPath(); ctx.moveTo(30, -6); ctx.lineTo(46, -14 - f); ctx.lineTo(30, 4); ctx.closePath(); fs('#cfe1ff', 2);
+  ctx.restore();
+}
+function drawColleague(e) {
+  const x = e.x - cam.x, y = e.y, v = e.v || 0;
+  const V = [{ top: '#3f6fb0', hair: '#3a2a20', pants: '#2f3440', glasses: true, beard: true },
+             { top: '#c9433b', hair: '#d9b27a', pants: '#39404d', glasses: false, bun: true },
+             { top: '#4f8f5f', hair: '#1f1a18', pants: '#2b2f38', glasses: true }][v];
+  ctx.save(); ctx.translate(x, y); ctx.scale(e.facing, 1);
+  if (e.flash > 0) ctx.filter = 'brightness(1.4)';
+  const walk = e.calm ? Math.sin(time * 14) * 8 : 0;
+  ell(0, 2, 30, 6); ctx.fillStyle = 'rgba(27,20,17,.25)'; ctx.fill();
+  limb([[-6, -100], [-8 - walk, -50], [-8 - walk * 1.2, -6]], 14, V.pants);
+  limb([[6, -100], [8 + walk, -50], [8 + walk * 1.2, -6]], 14, V.pants);
+  ell(-6 - walk * 1.2, -4, 11, 6); fs('#efe9df', 2.5); ell(10 + walk * 1.2, -4, 11, 6); fs('#efe9df', 2.5);
+  rr(-22, -178, 44, 84, 14); fs(V.top, 3.5);
+  // laptop held in front + talking arm
+  if (e.talk > 0 && !e.calm) limb([[14, -166], [34, -160], [50, -172]], 9, V.top);
+  else limb([[14, -166], [26, -138], [30, -118]], 9, V.top);
+  rr(8, -128, 40, 28, 3); fs('#c9ccd1', 2.5); ell(28, -114, 3, 3); fs('#fff', 1.5);
+  ell(0, -196, 18, 20); fs('#f0cbb0', 3);
+  ctx.beginPath(); ctx.ellipse(-2, -208, 19, 11, 0, Math.PI, 0); ctx.fillStyle = V.hair; ctx.fill(); ink(2.5); ctx.stroke();
+  if (V.bun) { ell(-12, -220, 8, 8); fs(V.hair, 2.5); }
+  if (V.beard) { ctx.beginPath(); ctx.moveTo(-10, -188); ctx.quadraticCurveTo(4, -170, 16, -190); ctx.lineTo(16, -184); ctx.quadraticCurveTo(4, -176, -10, -186); ctx.fillStyle = V.hair; ctx.fill(); }
+  if (V.glasses) { ctx.beginPath(); ctx.arc(4, -198, 5, 0, 7); ctx.arc(15, -198, 4.5, 0, 7); ink(2); ctx.stroke(); }
+  ctx.fillStyle = INK; ctx.fillRect(4, -199, 2, 2); ctx.fillRect(15, -199, 2, 2);
+  if (e.calm) { ctx.beginPath(); ctx.moveTo(6, -186); ctx.quadraticCurveTo(11, -182, 16, -186); ink(2); ctx.stroke(); }
+  else { const o = e.talk > 0 ? Math.abs(Math.sin(time * 20)) * 4 + 1 : 1; ell(12, -185, 4, o); fs('#7a2a32', 1.8); }
+  ctx.restore();
+}
+function drawPrinter(e) {
+  const x = e.x - cam.x, y = e.y, sh = e.jam > 0 ? Math.sin(time * 70) * 2 : 0;
+  ctx.save(); ctx.translate(x + sh, y);
+  if (e.flash > 0) ctx.filter = 'brightness(1.4)';
+  rr(-42, -40, 84, 40, 4); fs('#8d9199', 3);
+  rr(-46, -92, 92, 54, 8); fs('#e9edf0', 3.5);
+  rr(-30, -100, 60, 12, 3); fs('#fff', 2.5);
+  rr(-34, -64, 68, 8, 2); fs('#2a2e36', 2);
+  ell(28, -80, 5, 5); fs(e.calm ? '#46cfc2' : (Math.floor(time * 4) % 2 ? '#d9343f' : '#7a1a26'), 2);
+  if (!e.calm) { ell(-14, -78, 4, 4); ctx.fillStyle = INK; ctx.fill(); ell(4, -78, 4, 4); ctx.fill(); strokeLines([[-20, -86, -10, -82], [10, -86, 0, -82]], INK, 2); bodyText('ЗАМЯТИЕ', 0, -20, 11, '#fff07a', 'center', 900); }
+  else bodyText('ГОТОВО', 0, -20, 11, '#bff3ff', 'center', 900);
+  ctx.restore();
+}
+function drawZoomWin(e) {
+  const x = e.x - cam.x, y = e.y;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(e.t * 2) * .05);
+  if (e.flash > 0) ctx.filter = 'brightness(1.4)';
+  ctx.globalAlpha = e.calm ? Math.max(0, e.leaveT / 2) : 1;
+  rr(-62, -46, 124, 92, 8); fs('#2a2e36', 3.5);
+  ctx.fillStyle = '#4a5160'; ctx.fillRect(-60, -44, 120, 14);
+  for (const [k, c] of [[0, '#ff5f57'], [1, '#febc2e'], [2, '#28c840']]) { ell(-50 + k * 10, -37, 3.4, 3.4); ctx.fillStyle = c; ctx.fill(); }
+  for (let k = 0; k < 4; k++) { const tx = -54 + (k % 2) * 56, ty = -26 + Math.floor(k / 2) * 34; rr(tx, ty, 52, 30, 3); ctx.fillStyle = ['#7a8aa3', '#a37a8a', '#8aa37a', '#a39a7a'][k]; ctx.fill(); ell(tx + 26, ty + 12, 7, 7); ctx.fillStyle = '#f0cbb0'; ctx.fill(); }
+  rr(-20, 34, 40, 14, 6); fs('#d9343f', 2); bodyText('МЬЮТ', 0, 41, 9, '#fff', 'center', 900);
+  ctx.restore();
+}
+function drawGrape(x, y, s, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  const pts = [[0, -10], [-8, -4], [8, -4], [-4, 4], [4, 4], [0, 12], [-12, -12], [12, -12]];
+  for (const [gx, gy] of pts) { ell(gx * s / 16, gy * s / 16, 6 * s / 16, 6 * s / 16); fs('#7b3a8c', 2); ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(gx * s / 16 - 2, gy * s / 16 - 3, 2, 2); }
+  ctx.beginPath(); ctx.moveTo(0, -16 * s / 16); ctx.lineTo(3, -24 * s / 16); ink(3); ctx.stroke();
+  ell(7 * s / 16, -20 * s / 16, 6 * s / 16, 3.5 * s / 16, -.4); fs('#4f8f5f', 2);
+  ctx.restore();
+}
+function drawWineShot(s) {
+  const x = s.x - cam.x;
+  if (s.kind === 'cork') {
+    ctx.save(); ctx.translate(x, s.y); ctx.rotate(Math.atan2(s.vy, s.vx));
+    rr(-9, -6, 18, 12, 3); fs('#d9b27a', 2.5); ctx.fillStyle = 'rgba(122,74,42,.5)'; ctx.fillRect(-6, -4, 2, 8); ctx.fillRect(0, -4, 2, 8);
+    ctx.restore();
+  } else if (s.kind === 'red') {
+    ctx.save(); ctx.translate(x, s.y); ctx.rotate(time * 8);
+    ctx.beginPath(); for (let k = 0; k < 10; k++) { const a = k / 10 * 6.28, r = s.r * (1 + Math.sin(time * 20 + k) * .15); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); fs('#8e1b3a', 2.5);
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(-4, -5, 4, 3);
+    ctx.restore();
+  } else {
+    ctx.save(); ctx.translate(x, s.y); ctx.rotate(Math.atan2(s.vy, s.vx) + Math.PI / 2);
+    ctx.beginPath(); ctx.moveTo(0, -9); ctx.quadraticCurveTo(7, 3, 0, 8); ctx.quadraticCurveTo(-7, 3, 0, -9); fs('#ff8fb1', 2);
+    ctx.restore();
+  }
+}
+function drawBottleOverlay(sp, w, h) {
+  // until the AI sprites with bottles exist: a bottle drawn over the bubble gun
+  const wine = WINES[P.weapon || 0], mx = (sp.mx - sp.ax) * w, my = -h * (1 - sp.my);
+  ctx.save(); ctx.translate(mx - 4, my + 6);
+  rr(-74, -15, 50, 30, 9); fs(wine.glass, 3);
+  ctx.beginPath(); ctx.moveTo(-26, -11); ctx.quadraticCurveTo(-14, -6, -4, -5); ctx.lineTo(-4, 5); ctx.quadraticCurveTo(-14, 6, -26, 11); ctx.closePath(); fs(wine.glass, 3);
+  rr(-8, -6, 12, 12, 3); fs(wine.foil, 2.5);
+  rr(-66, -10, 28, 20, 3); fs(wine.label, 2); ctx.fillStyle = wine.foil; ctx.fillRect(-60, -3, 16, 3);
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-70, -11, 36, 3);
+  ctx.restore();
+}
+function drawOutlook(b) {
+  const x = b.x - cam.x, y = b.y, s = b.scale, defeated = b.state === 'defeated';
+  // ground shadow
+  ell(x, GROUND + 2, 120 * s, 12 * s); ctx.fillStyle = 'rgba(27,20,17,.22)'; ctx.fill();
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  if (b.flash > 0) ctx.filter = 'brightness(1.5)';
+  // stakeholder heads on springy necks
+  if (b.heads > 0) for (let k = 0; k < 3; k++) {
+    const hp2 = headPos(b, k), hx = (hp2.x - b.x) / s, hy = (hp2.y - b.y) / s;
+    ctx.beginPath(); ctx.moveTo(-40 + k * 40, -70); ctx.quadraticCurveTo(-40 + k * 40 + Math.sin(b.anim * 5 + k) * 30, (hy - 70) / 2, hx, hy + 20); ink(12); ctx.stroke(); ctx.strokeStyle = '#2b2f3a'; ctx.lineWidth = 7; ctx.stroke();
+    ell(hx, hy, 26, 28); fs(['#f0cbb0', '#e9b896', '#f3d2bd'][k], 3);
+    ctx.fillStyle = ['#3a2a20', '#d9b27a', '#1f1a18'][k]; ctx.beginPath(); ctx.ellipse(hx, hy - 14, 26, 14, 0, Math.PI, 0); ctx.fill();
+    ell(hx - 8, hy - 2, 3, 3.5); ctx.fillStyle = INK; ctx.fill(); ell(hx + 8, hy - 2, 3, 3.5); ctx.fill();
+    strokeLines([[hx - 14, hy - 10, hx - 4, hy - 7], [hx + 14, hy - 10, hx + 4, hy - 7]], INK, 2.4);
+    ell(hx, hy + 12, 7, 3 + Math.abs(Math.sin(b.anim * 12 + k)) * 4); fs('#7a2a32', 2);
+    rr(hx - 6, hy + 26, 12, 22, 3); fs(['#d9343f', '#2f6fd6', '#46cfc2'][k], 2);
+  }
+  // calendar arms
+  for (const side of [-1, 1]) {
+    let ax = side * 128, ay = 10;
+    for (let k = 0; k < 3; k++) {
+      const wave = Math.sin(b.anim * 3 + k * .8 + (side > 0 ? 1 : 0)) * 14;
+      const nx = ax + side * 34, ny = ay + 16 + wave;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(nx, ny); ink(8); ctx.stroke(); ctx.strokeStyle = '#2b6fc4'; ctx.lineWidth = 4; ctx.stroke();
+      ax = nx; ay = ny;
+    }
+    rr(ax - 26, ay - 6, 52, 46, 5); fs('#fff', 3);
+    ctx.fillStyle = '#d9343f'; ctx.fillRect(ax - 24.5, ay - 4.5, 49, 11);
+    ctx.fillStyle = 'rgba(27,20,17,.4)'; for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) ctx.fillRect(ax - 20 + c * 11, ay + 12 + r * 8, 7, 5);
+  }
+  // envelope body
+  const g = ctx.createLinearGradient(0, -85, 0, 85); g.addColorStop(0, '#3c8be0'); g.addColorStop(1, '#1d56a6');
+  rr(-130, -85, 260, 170, 16); ctx.fillStyle = defeated ? '#ffffff' : g; ctx.fill(); ink(5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-126, 80); ctx.lineTo(-20, 0); ctx.moveTo(126, 80); ctx.lineTo(20, 0); ctx.strokeStyle = defeated ? 'rgba(27,20,17,.3)' : 'rgba(255,255,255,.35)'; ctx.lineWidth = 4; ctx.stroke();
+  // flap = mouth
+  const open = b.mouth;
+  if (open > .05) { ctx.beginPath(); ctx.moveTo(-122, -80); ctx.lineTo(0, -10 + open * 40); ctx.lineTo(122, -80); ctx.closePath(); ctx.fillStyle = '#0d2f5e'; ctx.fill(); ctx.fillStyle = '#fff'; for (let k = 0; k < 5; k++) ctx.fillRect(-60 + k * 26, -64, 14, 10); }
+  ctx.beginPath(); ctx.moveTo(-126, -82); ctx.lineTo(0, open > .05 ? -40 - open * 60 : 10); ctx.lineTo(126, -82); ctx.closePath();
+  ctx.fillStyle = defeated ? '#f6f1ff' : '#5aa0ee'; ctx.fill(); ink(4); ctx.stroke();
+  // eyes
+  if (defeated) {
+    strokeLines([[-56, -36, -40, -46, -24, -36], [24, -36, 40, -46, 56, -36]], INK, 5);
+    heartPath(0, 30, 50); fs('#ff5c8a', 3.5);
+  } else {
+    const lx = clamp((P.x - b.x) * .02, -6, 6), ly = clamp((P.y - 160 - b.y) * .02, -5, 5);
+    for (const ex of [-40, 40]) { ell(ex, -30, 20, 18); fs('#fff', 3.5); ell(ex + lx, -28 + ly, 8, 9); ctx.fillStyle = INK; ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(ex + lx + 2, -32 + ly, 3, 3); }
+    strokeLines([[-64, -60, -20, -46], [64, -60, 20, -46]], INK, 7);
+    // unread badge
+    ell(118, -78, 42, 26); fs('#d9343f', 4);
+    bodyText(unread().toLocaleString('ru-RU'), 118, -77, 20, '#fff', 'center', 900);
+  }
+  ctx.restore();
+}
+function drawOfficeFoe(f) {
+  const x = f.x - cam.x;
+  if (f.kind === 'mail') {
+    ctx.save(); ctx.translate(x, f.y); ctx.rotate(Math.sin(time * 10 + f.x) * .15);
+    rr(-22, -15, 44, 30, 4); fs('#fff', 3);
+    ctx.beginPath(); ctx.moveTo(-20, -13); ctx.lineTo(0, 2); ctx.lineTo(20, -13); ink(2.5); ctx.stroke();
+    bodyText(f.text, 0, 8, 10, '#2f6fd6', 'center', 900);
+    ctx.restore(); return true;
+  }
+  if (f.kind === 'invite') {
+    if (f.warn > 0) { ell(x, GROUND + 6, 50, 9); ctx.fillStyle = `rgba(217,52,63,${.35 + Math.sin(time * 20) * .2})`; ctx.fill(); comicText('!', x, GROUND - 24, 30, '#ff5c8a', 0, 6); return true; }
+    ctx.save(); ctx.translate(x, f.y);
+    rr(-48, -35, 96, 70, 6); fs('#fff', 3.5);
+    ctx.fillStyle = '#2f6fd6'; ctx.fillRect(-46.5, -33.5, 93, 18);
+    bodyText('КАЛЕНДАРЬ', 0, -24, 10, '#fff', 'center', 900);
+    bodyText(f.text, 0, 6, 15, INK, 'center', 900);
+    bodyText('Принять?', 0, 24, 10, '#7a1a26', 'center', 700);
+    ctx.restore(); return true;
+  }
+  if (f.kind === 'paper') {
+    ctx.save(); ctx.translate(x, f.y); ctx.rotate(f.rot * .3);
+    rr(-15, -20, 30, 40, 2); fs('#fff', 2.5);
+    ctx.fillStyle = 'rgba(27,20,17,.35)'; for (let k = 0; k < 5; k++) ctx.fillRect(-10, -14 + k * 6, 20 - (k % 2) * 6, 2);
+    bodyText('A4', 0, 14, 8, '#7a1a26', 'center', 900);
+    ctx.restore(); return true;
+  }
+  return false;
+}
+
 /* ---------- HUD ---------- */
 function drawHUD() {
   for (let i = 0; i < P.maxHp; i++) {
@@ -1947,18 +2673,36 @@ function drawHUD() {
     heartPath(x, y, s); fs(i < P.hp ? '#ff4f7f' : 'rgba(255,255,255,.18)', 3.5);
     if (i < P.hp) { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.ellipse(x - 7, y - 9, 4, 3, -.6, 0, 7); ctx.fill(); }
   }
-  drawDaisy(46, 100, 18, time * .5);
+  if (level === 2) drawGrape(46, 102, 20, 0); else drawDaisy(46, 100, 18, time * .5);
   comicText(`${daisies}/${daisyTotal}`, 112, 101, 22, '#fff3df', 0, 5);
   // progress strip
   if (!cam.lock) {
     const px = 980, pw = 260, k = clamp(P.x / (ARENA_X + 330), 0, 1);
     rr(px, 34, pw, 12, 6); fs('rgba(255,243,223,.25)', 3);
     rr(px, 34, Math.max(12, pw * k), 12, 6); ctx.fillStyle = '#ff7fb2'; ctx.fill();
-    bodyText('дом родителей', px, 64, 13, '#fff3df', 'left', 700);
-    bodyText('дом Яши', px + pw, 64, 13, '#fff3df', 'right', 700);
+    bodyText(level === 2 ? 'ресепшн' : 'дом родителей', px, 64, 13, '#fff3df', 'left', 700);
+    bodyText(level === 2 ? 'рабочее место' : 'дом Яши', px + pw, 64, 13, '#fff3df', 'right', 700);
     heartPath(px + pw * k, 40, 22); fs('#ff4f7f', 3);
   }
-  if (boss && state !== 'bossintro') {
+  if (level === 2 && state === 'play') {
+    // wine selector
+    for (let i = 0; i < 3; i++) {
+      const wx = 40 + i * 74, wy = H - 70, sel = (P.weapon || 0) === i, wn = WINES[i];
+      rr(wx - 4, wy - 34, 66, 68, 10); fs(sel ? '#fff3df' : 'rgba(255,243,223,.25)', sel ? 4 : 3);
+      ctx.save(); ctx.translate(wx + 29, wy + 2); ctx.rotate(-.5);
+      rr(-9, -6, 18, 32, 6); fs(wn.glass, 2.5); rr(-4, -20, 8, 16, 3); fs(wn.glass, 2); rr(-4, -24, 8, 6, 2); fs(wn.foil, 1.5); rr(-7, 2, 14, 12, 2); fs(wn.label, 1.5);
+      ctx.restore();
+      bodyText(String(i + 1), wx + 8, wy - 22, 14, sel ? '#7a1a26' : '#fff3df', 'center', 900);
+    }
+    bodyText(WINES[P.weapon || 0].name + '  ·  1 2 3 / Q', 40, H - 120, 16, '#fff3df', 'left', 900);
+  }
+  if (boss && boss.kind === 'outlook' && state !== 'bossintro') {
+    const bw = 520, bx = W / 2 - bw / 2, by = 36, k = boss.hp / boss.maxHp;
+    comicText('АУТЛУК', W / 2, by - 6, 22, '#fff3df', 0, 5);
+    rr(bx, by + 12, bw, 22, 11); fs('#1d2a40', 4);
+    if (k > 0) { rr(bx + 3, by + 15, (bw - 6) * k, 16, 8); ctx.fillStyle = '#3c8be0'; ctx.fill(); }
+    bodyText(k > 0 ? `непрочитанных: ${unread().toLocaleString('ru-RU')}` : 'INBOX ZERO', W / 2, by + 23, 13, '#fff3df', 'center', 900);
+  } else if (boss && state !== 'bossintro') {
     const bw = 520, bx = W / 2 - bw / 2, by = 36;
     comicText('РОККИ', W / 2, by - 6, 22, '#fff3df', 0, 5);
     rr(bx, by + 12, bw, 22, 11); fs('#3a2a30', 4);
@@ -2013,16 +2757,24 @@ function drawTitle() {
   ctx.restore();
   drawDiana(330, 600, { facing: 1, ph: 0, air: false, vx: 0, aim: -.35, pose: 'normal', shootAnim: 0, groundY: 600 });
   panel(440, 380, 400, 150, '#fff3df', -.01);
-  bodyText('Уровень 1', W / 2, 410, 18, '#7a1a26', 'center', 900);
-  comicText('ДОРОГА К ДОМУ ЯШИ', W / 2, 446, 24, '#ff7fb2', 0, 6);
+  bodyText('Уровень ' + level, W / 2, 410, 18, '#7a1a26', 'center', 900);
+  comicText(level === 2 ? 'ОПЕНСПЕЙС' : 'ДОРОГА К ДОМУ ЯШИ', W / 2, 446, 24, '#ff7fb2', 0, 6);
   if (Math.floor(time * 2) % 2) bodyText('Кликни, чтобы начать', W / 2, 496, 22, INK, 'center', 900);
   bodyText('лучше играть на компьютере · M — звук', W / 2, 690, 15, 'rgba(255,243,223,.75)');
 }
 function drawStory() {
   ctx.fillStyle = 'rgba(20,10,22,.55)'; ctx.fillRect(0, 0, W, H);
   panel(200, 90, 880, 470, '#fff3df', -.006);
-  comicText('ОКТЯБРЬ. РОДНОЙ ГОРОДОК.', W / 2, 150, 30, '#ff7fb2', 0, 7);
-  const lines = [
+  comicText(level === 2 ? 'ПОНЕДЕЛЬНИК. 9:00. ОФИС SIMPLE.' : 'ОКТЯБРЬ. РОДНОЙ ГОРОДОК.', W / 2, 150, 30, '#ff7fb2', 0, 7);
+  const lines = level === 2 ? [
+    'Диана — продакт-менеджер в Simple.',
+    'Задача: дойти до своего рабочего места.',
+    'Но дедлайны, задачи «СРОЧНО» и коллеги',
+    'с «быстрыми вопросами» против.',
+    '',
+    'Хорошо, что вокруг — винная компания.',
+    '1 игристое · 2 красное · 3 розе',
+  ] : [
     'Диана выходит из дома родителей.',
     'Задача: добраться до дома Яши.',
     'Но голуби, крысы, таксисты и бабушки',
@@ -2044,20 +2796,20 @@ function drawBossIntro() {
     rr(-268, -80, 520, 190, 10); fs('#ffe14d', 5);
     ctx.restore();
     ctx.save(); ctx.translate(380 - (1 - s) * 600, 300); ctx.rotate(-.05);
-    comicText('РОККИ', -8, -14, 64, '#ff5c8a', 0, 12);
-    bodyText('гроза крыс', -8, 52, 28, INK, 'center', 900);
+    comicText(level === 2 ? 'АУТЛУК' : 'РОККИ', -8, -14, 64, level === 2 ? '#2f6fd6' : '#ff5c8a', 0, 12);
+    bodyText(level === 2 ? '9999+ непрочитанных' : 'гроза крыс', -8, 52, 28, INK, 'center', 900);
     ctx.restore();
   }
   if (stateT > 1.2) {
     panel(760, 520, 440, 86, '#fff3df', .01);
-    bodyText('Пузыри повышают дружбу', 980, 548, 19, INK, 'center', 900);
-    bodyText('E или ПКМ — бросить вкусняшку', 980, 578, 19, '#7a1a26', 'center', 700);
+    bodyText(level === 2 ? 'Вино разбирает почту' : 'Пузыри повышают дружбу', 980, 548, 19, INK, 'center', 900);
+    bodyText(level === 2 ? '1 · 2 · 3 или Q — сменить вино' : 'E или ПКМ — бросить вкусняшку', 980, 578, 19, '#7a1a26', 'center', 700);
   }
 }
 function drawOver() {
   ctx.fillStyle = 'rgba(20,10,22,.6)'; ctx.fillRect(0, 0, W, H);
   comicText('ОЙ!', W / 2, 260, 110, '#ff5c8a', -.05, 18);
-  bodyText(cam.lock ? 'Рокки пока не готов дружить. Ещё разок?' : 'Уметь надо. Ещё разок?', W / 2, 370, 26, '#fff3df', 'center', 700);
+  bodyText(cam.lock ? (level === 2 ? 'Почта победила. Ещё разок?' : 'Рокки пока не готов дружить. Ещё разок?') : 'Уметь надо. Ещё разок?', W / 2, 370, 26, '#fff3df', 'center', 700);
   if (stateT > .8 && Math.floor(time * 2) % 2) bodyText('Кликни, чтобы продолжить', W / 2, 430, 22, '#ffe14d', 'center', 900);
 }
 function drawPaused() {
@@ -2065,7 +2817,38 @@ function drawPaused() {
   comicText('ПАУЗА', W / 2, 300, 80, '#ffe14d', 0, 14);
   bodyText('P, Esc или клик — продолжить', W / 2, 390, 22, '#fff3df');
 }
+function drawEnding2() {
+  if (endT > .2 && endT < 3.6) { const s2 = Math.min(1, (endT - .2) * 5); comicText('INBOX ZERO!', W / 2, 190, 76 * (.6 + .4 * s2), '#46cfc2', -.04, 14); }
+  if (endT > 2.4 && endT < 5.6) {
+    const s2 = Math.min(1, (endT - 2.4) * 4);
+    ctx.save(); ctx.translate(W - 300, 300 + (1 - s2) * 400); ctx.rotate(.03);
+    rr(-210, -90, 420, 180, 12); ctx.fillStyle = INK; ctx.fill(); rr(-218, -98, 420, 180, 12); fs('#fff', 4);
+    ctx.fillStyle = '#2f6fd6'; ctx.fillRect(-216, -96, 416, 34);
+    bodyText('Новое письмо', -8, -79, 16, '#fff', 'center', 900);
+    bodyText('Тема: Отпуск одобрен!', -8, -30, 24, INK, 'center', 900);
+    bodyText('Хорошего отдыха, Диана :)', -8, 10, 18, '#7a1a26', 'center', 700);
+    bodyText('— HR', -8, 44, 16, '#555', 'center', 700);
+    ctx.restore();
+  }
+  if (endT > 5.6) {
+    const s2 = Math.min(1, (endT - 5.6) * 3);
+    ctx.fillStyle = `rgba(20,10,22,${.55 * s2})`; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.globalAlpha = s2;
+    panel(250, 90, 780, 470, '#fff3df', -.01);
+    comicText('УРОВЕНЬ 2 ПРОЙДЕН', W / 2, 160, 42, '#2f6fd6', 0, 10);
+    bodyText('Inbox Zero. Дедлайны побеждены.', W / 2, 228, 24, INK, 'center', 700);
+    drawGrape(W / 2 - 150, 292, 20, 0);
+    bodyText(`виноград: ${daisies} из ${daisyTotal}`, W / 2 + 10, 290, 24, INK, 'center', 900);
+    bodyText(`время: ${Math.floor(runTime / 60)}:${String(Math.floor(runTime % 60)).padStart(2, '0')} · бутылок открыто: ${bubbles}`, W / 2, 330, 20, '#7a1a26', 'center', 700);
+    rr(W / 2 - 250, 372, 500, 84, 10); fs('#6e1430', 4);
+    bodyText('Дальше · Уровень 3', W / 2, 398, 18, '#f6e7c8', 'center', 700);
+    comicText('ДОМА', W / 2, 430, 30, '#ffe14d', 0, 7);
+    if (endT > 8 && Math.floor(time * 2) % 2) bodyText('Скоро! Кликни, чтобы вернуться в меню', W / 2, 510, 20, INK, 'center', 900);
+    ctx.restore();
+  }
+}
 function drawEnding() {
+  if (level === 2) return drawEnding2();
   if (endT > .2 && endT < 3.4) {
     const s = Math.min(1, (endT - .2) * 5);
     comicText('РОККИ ПРИРУЧЁН!', W / 2, 200, 64 * (0.6 + .4 * s), '#ff5c8a', -.04, 14);
@@ -2083,7 +2866,7 @@ function drawEnding() {
     rr(W / 2 - 250, 372, 500, 84, 10); fs('#2f5a8f', 4);
     bodyText('Дальше · Уровень 2', W / 2, 398, 18, '#bff3ff', 'center', 700);
     comicText('ОПЕНСПЕЙС', W / 2, 430, 30, '#ffe14d', 0, 7);
-    if (hugT > 6.5 && Math.floor(time * 2) % 2) bodyText('Кликни, чтобы сыграть ещё раз', W / 2, 510, 20, INK, 'center', 900);
+    if (hugT > 6.5 && Math.floor(time * 2) % 2) bodyText('Кликни — дальше, в офис!', W / 2, 510, 20, INK, 'center', 900);
     ctx.restore();
   }
 }
@@ -2093,7 +2876,7 @@ function render() {
   ctx.save();
   if (cam.shake > 0) ctx.translate(rnd(-cam.shake, cam.shake), rnd(-cam.shake, cam.shake) * .6);
   if (cam.zoom > 1.001) { const zk = clamp((cam.zoom - 1) / .75, 0, 1); ctx.translate(lerp(cam.fx, W / 2, zk), lerp(cam.fy, H * .62, zk)); ctx.scale(cam.zoom, cam.zoom); ctx.translate(-cam.fx, -cam.fy); }
-  drawSky(); drawFar(); drawHouses(); drawMid(); drawRoad();
+  if (level === 2) drawOffice(); else { drawSky(); drawFar(); drawHouses(); drawMid(); drawRoad(); }
   for (const e of ents) if (e.type === 'taxi') drawTaxi(e);
   for (const p of props) drawProp(p);
   for (const e of ents) if (e.type === 'puddle') drawPuddle(e);
@@ -2101,6 +2884,7 @@ function render() {
     const x = it.x - cam.x; if (x < -50 || x > W + 50) continue;
     const by = it.y + Math.sin(it.ph) * 5;
     if (it.type === 'daisy') drawDaisy(x, by, 16, Math.sin(it.ph * .5) * .3);
+    else if (it.type === 'grape') drawGrape(x, by, 18, Math.sin(it.ph * .5) * .2);
     else { heartPath(x, by, 32); fs('#ff4f7f', 3.5); ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.ellipse(x - 6, by - 8, 4, 3, -.6, 0, 7); ctx.fill(); }
   }
   for (const t of treats) drawTreat(t);
@@ -2108,22 +2892,25 @@ function render() {
     for (const e of ents) {
       const x = e.x - cam.x; if (x < -150 || x > W + 150) continue;
       if (e.type === 'pigeon') drawPigeon(e); else if (e.type === 'rat') drawRat(e); else if (e.type === 'baba') drawBaba(e);
+      else if (e.type === 'clock') drawClock(e); else if (e.type === 'ticket') drawTicket(e); else if (e.type === 'colleague') drawColleague(e); else if (e.type === 'printer') drawPrinter(e); else if (e.type === 'zoomwin') drawZoomWin(e);
       if (e.trapped) {
-        const r = e.type === 'rat' ? 38 : 34, cy = e.type === 'rat' ? e.y - 20 : e.y - 4;
+        const r = e.type === 'rat' ? 38 : e.type === 'clock' ? 40 : 34, cy = e.type === 'rat' ? e.y - 20 : e.type === 'clock' ? e.y - 32 : e.y - 4;
         drawShot({ x: e.x, y: cy, r, wob: time * 6 });
       }
     }
-    const pairHug = state === 'ending' && hugT >= .3 && sprOk(HUG_PAIR);
+    const pairHug = level === 1 && state === 'ending' && hugT >= .3 && sprOk(HUG_PAIR);
     const rockyInArms = state === 'ending' && hugT >= 0 && !pairHug;
     if (pairHug) drawHugPair();
+    else if (boss && boss.kind === 'outlook') { if (boss.state !== 'defeated') drawOutlook(boss); }
     else if (boss && !rockyInArms) drawRocky(boss.x - cam.x, boss.y, boss);
     const blink = P.inv > 0 && state === 'play' && Math.floor(time * 16) % 2 === 0;
     let gy = GROUND;
     for (const pl of platforms) if (P.x > pl.x - 8 && P.x < pl.x + pl.w + 8 && P.y <= pl.y + 1 && pl.y < gy) gy = pl.y;
     if (!pairHug) drawDiana(P.x - cam.x, P.y, { facing: P.facing, ph: P.ph, air: !P.onGround && state === 'play', vx: P.vx, vy: P.vy, hurt: P.inv > 1.0 && state === 'play', aim: P.aim, pose: P.pose, shootAnim: P.shootAnim, blink, groundY: gy, happy: state === 'ending', lean: P.lean });
     if (boss && rockyInArms && !pairHug) drawRocky(boss.x - cam.x + (boss.hugShift || 0) * boss.facing, boss.y, boss);
-    for (const s of shots) drawShot(s);
+    for (const s of shots) s.kind ? drawWineShot(s) : drawShot(s);
     for (const f of foes) drawFoe(f);
+    if (boss && boss.kind === 'outlook' && boss.state === 'defeated') drawOutlook(boss);
   }
   for (const p of parts) drawPart(p);
   ctx.restore();
@@ -2155,7 +2942,8 @@ requestAnimationFrame(frame);
 // test hook
 window.__gainulka = {
   get state() { return state; }, set state(v) { state = v; stateT = 0; },
-  P, get boss() { return boss; }, start: startGame, warp(x) { P.x = x; cam.x = clamp(x - 400, 0, ARENA_X); },
+  P, get boss() { return boss; }, get level() { return level; }, start(lv) { if (lv) level = lv; startGame(); },
+  hit(v) { if (boss && boss.kind === 'outlook') { boss.hp = Math.max(0, boss.hp - v); if (boss.hp <= 0) startEnding2(); } else addFriend(v); }, warp(x) { P.x = x; cam.x = clamp(x - 400, 0, ARENA_X); },
   friend(v) { addFriend(v); },
   closeup(sc, opts = {}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#e9e1d4'; ctx.fillRect(0, 0, W, H);
