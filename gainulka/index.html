@@ -661,7 +661,7 @@ function muzzle() {
   const sp = dianaPose({ pose: P.pose, hurt: P.inv > 1.0, air: !P.onGround, vx: P.vx, ph: P.ph });
   if (sprOk(sp)) {
     const h = sp.h * SPRITE_K, w = h * sp.img.naturalWidth / sp.img.naturalHeight;
-    return { x: P.x + P.facing * (sp.mx - sp.ax) * w, y: P.y - h * (1 - sp.my), dx: c * P.facing, dy: s };
+    return { x: P.x + P.facing * (sp.mx - sp.ax) * w, y: P.y - h * (1 - sp.my) + (sp.dy || 0), dx: c * P.facing, dy: s };
   }
   const lx = DH_S1[0] + 50 * c + 41 * c + 9 * s, ly = DH_S1[1] + 50 * s + 41 * s - 9 * c;
   return { x: P.x + P.facing * lx, y: P.y + ly, dx: c * P.facing, dy: s };
@@ -1556,11 +1556,27 @@ function dianaGrip(aim, kick = 0) {
   const c = Math.cos(aim), s = Math.sin(aim);
   return [DH_S1[0] + c * (50 + kick), DH_S1[1] + s * (50 + kick)];
 }
+// level 2 walk: legs from the walk frame, upper body (holding the bottle) from the standing frame, joined at the belt
+const BELT = { standBottle: [.419, .266], walkA: [.431, .424], walkB: [.425, .369] }; // [belt y from top, waist centre x]
+const COMP = {};
+function walkWithBottle(leg) {
+  const key = leg === DSPR.walkA ? 'walkA' : 'walkB';
+  if (!COMP[key]) {
+    const up = DSPR.standBottle, K = SPRITE_K;
+    const beltUp = -(1 - BELT.standBottle[0]) * up.h * K, beltLeg = -(1 - BELT[key][0]) * leg.h * K;
+    COMP[key] = Object.assign({}, up, { ax: BELT.standBottle[1], comp: true, leg, legKey: key, beltLeg, dy: beltLeg - beltUp });
+  }
+  return COMP[key];
+}
 function dianaPose(o) {
   if (o.pose === 'hug') return DSPR.hug || DSPR.stand;
   if (o.hurt) return DSPR.hurt;
   if (o.air) return level === 2 && sprOk(DSPR.jumpBottle) ? DSPR.jumpBottle : DSPR.jumpBody;
-  if (!o.air && Math.abs(o.vx) > 30) return Math.floor(o.ph / (Math.PI / 2)) % 2 ? DSPR.walkB : DSPR.walkA;
+  if (!o.air && Math.abs(o.vx) > 30) {
+    const leg = Math.floor(o.ph / (Math.PI / 2)) % 2 ? DSPR.walkB : DSPR.walkA;
+    if (level === 2 && sprOk(DSPR.standBottle)) return walkWithBottle(leg);
+    return leg;
+  }
   return level === 2 && sprOk(DSPR.standBottle) ? DSPR.standBottle : DSPR.stand;
 }
 function drawDiana(x, y, o) {
@@ -1576,8 +1592,18 @@ function drawDiana(x, y, o) {
   const sq = moving ? 1 + Math.abs(Math.cos(o.ph)) * .02 : 1;
   ctx.translate(0, bob); ctx.scale(1 / sq, sq);
   if (o.lean) ctx.rotate(o.lean);
-  const img = level === 2 && sp.img2 && sp.img2.complete && sp.img2.naturalWidth ? sp.img2 : sp.img;
-  ctx.drawImage(img, -sp.ax * w, -h, w, h);
+  if (sp.comp) {
+    const leg = sp.leg, li = leg.img2 && leg.img2.naturalWidth ? leg.img2 : leg.img;
+    const lh = leg.h * SPRITE_K, lw = lh * li.naturalWidth / li.naturalHeight;
+    ctx.save(); ctx.beginPath(); ctx.rect(-200, sp.beltLeg - 2, 400, 400); ctx.clip();
+    ctx.drawImage(li, -BELT[sp.legKey][1] * lw, -lh, lw, lh); ctx.restore();
+    ctx.save(); ctx.translate(0, sp.dy); ctx.beginPath(); ctx.rect(-200, -400, 400, 400 + sp.beltLeg - sp.dy + 3); ctx.clip();
+    ctx.drawImage(sp.img, -sp.ax * w, -h, w, h); ctx.restore();
+    ctx.translate(0, sp.dy);
+  } else {
+    const img = level === 2 && sp.img2 && sp.img2.complete && sp.img2.naturalWidth ? sp.img2 : sp.img;
+    ctx.drawImage(img, -sp.ax * w, -h, w, h);
+  }
   if (sp === DSPR.jumpBody && sprOk(DSPR.jumpHair)) {
     // flowing hair: slice the hair layer into columns and wave them, more at the tips
     const hi = DSPR.jumpHair.img, iw = hi.naturalWidth, ih = hi.naturalHeight, sc = w / iw;
