@@ -983,7 +983,13 @@ function update(dt) {
   switch (state) {
     case 'title':
       cam.x = (time * 40) % 3000;
-      if (anyStart()) { state = 'story'; stateT = 0; music.play(LEVELS[level].song); }
+      {
+        let pickLv = 0;
+        if (pressed.Digit1) pickLv = 1; if (pressed.Digit2) pickLv = 2;
+        if (mouse.clicked) for (const c of TITLE_CARDS) if (mouse.x > c.x && mouse.x < c.x + c.w && mouse.y > c.y && mouse.y < c.y + c.h) pickLv = c.lv;
+        if (!pickLv && (pressed.Enter || pressed.Space)) pickLv = level;
+        if (pickLv) toStory(pickLv);
+      }
       return;
     case 'story':
       cam.x = (time * 40) % 3000;
@@ -2742,6 +2748,10 @@ function panel(x, y, w, h, fill = '#fff3df', rot = 0) {
   rr(-w / 2, -h / 2, w, h, 10); fs(fill, 5);
   ctx.restore();
 }
+const TITLE_CARDS = [
+  { lv: 1, x: 300, y: 372, w: 330, h: 120, name: 'ДОРОГА К ДОМУ ЯШИ', sub: 'родной городок · октябрь' },
+  { lv: 2, x: 660, y: 372, w: 330, h: 120, name: 'ОПЕНСПЕЙС', sub: 'офис Simple · понедельник' },
+];
 function drawTitle() {
   ctx.fillStyle = 'rgba(20,10,22,.35)'; ctx.fillRect(0, 0, W, H);
   const wob = Math.sin(time * 2) * .02;
@@ -2756,11 +2766,18 @@ function drawTitle() {
   rr(-250, -24, 500, 48, 8); fs('#46cfc2', 4);
   bodyText('игра ко дню рождения Дианы', 0, 1, 24, INK, 'center', 900);
   ctx.restore();
-  drawDiana(330, 600, { facing: 1, ph: 0, air: false, vx: 0, aim: -.35, pose: 'normal', shootAnim: 0, groundY: 600 });
-  panel(440, 380, 400, 150, '#fff3df', -.01);
-  bodyText('Уровень ' + level, W / 2, 410, 18, '#7a1a26', 'center', 900);
-  comicText(level === 2 ? 'ОПЕНСПЕЙС' : 'ДОРОГА К ДОМУ ЯШИ', W / 2, 446, 24, '#ff7fb2', 0, 6);
-  if (Math.floor(time * 2) % 2) bodyText('Кликни, чтобы начать', W / 2, 496, 22, INK, 'center', 900);
+  drawDiana(190, 600, { facing: 1, ph: 0, air: false, vx: 0, aim: -.35, pose: 'normal', shootAnim: 0, groundY: 600 });
+  for (const c of TITLE_CARDS) {
+    const hover = mouse.x > c.x && mouse.x < c.x + c.w && mouse.y > c.y && mouse.y < c.y + c.h;
+    ctx.save(); ctx.translate(c.x + c.w / 2, c.y + c.h / 2 + (hover ? -4 : 0)); ctx.rotate(c.lv === 1 ? -.015 : .015);
+    rr(-c.w / 2 + 7, -c.h / 2 + 9, c.w, c.h, 10); ctx.fillStyle = INK; ctx.fill();
+    rr(-c.w / 2, -c.h / 2, c.w, c.h, 10); fs(hover ? '#fff8c8' : '#fff3df', 5);
+    bodyText('Уровень ' + c.lv + '  ·  клавиша ' + c.lv, 0, -30, 16, '#7a1a26', 'center', 900);
+    comicText(c.name, 0, 4, 22, c.lv === 2 ? '#2f6fd6' : '#ff7fb2', 0, 6);
+    bodyText(c.sub, 0, 36, 15, INK, 'center', 700);
+    ctx.restore();
+  }
+  if (Math.floor(time * 2) % 2) bodyText('Выбери уровень', W / 2, 560, 20, '#fff3df', 'center', 900);
   bodyText('лучше играть на компьютере · M — звук', W / 2, 690, 15, 'rgba(255,243,223,.75)');
 }
 function drawStory() {
