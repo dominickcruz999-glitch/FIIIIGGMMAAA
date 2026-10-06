@@ -2056,7 +2056,7 @@ function drawBossIntro() {
 function drawOver() {
   ctx.fillStyle = 'rgba(20,10,22,.6)'; ctx.fillRect(0, 0, W, H);
   comicText('ОЙ!', W / 2, 260, 110, '#ff5c8a', -.05, 18);
-  bodyText(cam.lock ? 'Рокки пока не готов дружить. Ещё разок?' : 'Городок оказался сильнее. Ещё разок?', W / 2, 370, 26, '#fff3df', 'center', 700);
+  bodyText(cam.lock ? 'Рокки пока не готов дружить. Ещё разок?' : 'Уметь надо. Ещё разок?', W / 2, 370, 26, '#fff3df', 'center', 700);
   if (stateT > .8 && Math.floor(time * 2) % 2) bodyText('Кликни, чтобы продолжить', W / 2, 430, 22, '#ffe14d', 'center', 900);
 }
 function drawPaused() {
