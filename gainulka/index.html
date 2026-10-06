@@ -275,9 +275,9 @@ function mk(type, x, y, air) {
   if (type === 'rat') { e.hp = 2; e.hopT = rnd(.3, 1.2); e.harm = true; e.onGround = true; e.pause = 0; }
   if (type === 'clock') { e.hp = 2; e.hopT = rnd(.4, 1.2); e.harm = true; e.onGround = true; e.ring = 0; }
   if (type === 'ticket') { e.st = 'fly'; e.dive = rnd(1, 2.5); e.harm = true; }
-  if (type === 'colleague') { e.hp = 3; e.shootT = 1; e.talk = 0; e.facing = -1; e.v = ents.filter(o => o.type === 'colleague').length % 3; }
-  if (type === 'printer') { e.hp = 4; e.shootT = 1.5; e.jam = 0; }
-  if (type === 'zoomwin') { e.hp = 2; e.shootT = 1.5; }
+  if (type === 'colleague') { e.hp = 3; e.shootT = 1.6; e.talk = 0; e.facing = -1; e.v = ents.filter(o => o.type === 'colleague').length % 3; }
+  if (type === 'printer') { e.hp = 4; e.shootT = 2; e.jam = 0; }
+  if (type === 'zoomwin') { e.hp = 2; e.shootT = 2.5; }
   if (type === 'baba') { e.hp = 3; e.shootT = 1; e.talk = 0; e.facing = -1; e.v = ents.filter(o => o.type === 'baba').length % 3; }
   return e;
 }
@@ -323,7 +323,7 @@ function buildLevel2() {
   props.push({ t: 'note', x: 930, lines: ['Игристое — пробкой', 'Красное — по дуге', 'Розе — веером'] });
   ents.push(mk('clock', 1150, GROUND));
   desk(1250);
-  ents.push(mk('ticket', 1520, 330, true)); ents.push(mk('ticket', 1680, 300, true));
+  ents.push(mk('ticket', 1560, 320, true));
   props.push({ t: 'meeting', x: 1720, w: 380, name: 'Шардоне' });
   ents.push(mk('colleague', 1950, GROUND));
   ents.push({ type: 'puddle', x: 2200, w: 110, coffee: true });
@@ -339,9 +339,9 @@ function buildLevel2() {
   ents.push(mk('printer', 4300, GROUND));
   ents.push({ type: 'puddle', x: 4480, w: 120, coffee: true });
   desk(4640);
-  ents.push(mk('ticket', 4720, 320, true)); ents.push(mk('ticket', 4880, 280, true)); ents.push(mk('ticket', 5030, 330, true));
+  ents.push(mk('ticket', 4760, 320, true)); ents.push(mk('ticket', 5000, 300, true));
   props.push({ t: 'meeting', x: 5000, w: 380, name: 'Пино Нуар' });
-  ents.push(mk('zoomwin', 5250, 300, true)); ents.push(mk('clock', 5320, GROUND));
+  ents.push(mk('clock', 5320, GROUND));
   ents.push(mk('colleague', 5560, GROUND));
   desk(5820);
   ents.push(mk('clock', 5950, GROUND)); ents.push(mk('clock', 6100, GROUND));
@@ -391,13 +391,13 @@ function updOfficeEnt(e, dt, dx, adx) {
       e.talk -= dt;
       if (!e.calm) {
         e.shootT -= dt; e.facing = dx > 0 ? 1 : -1;
-        if (e.shootT <= 0 && adx < 780 && adx > 60) { e.shootT = rnd(1.9, 2.6); e.talk = .5; officePhrase(e, pick(COLLEAGUE_PHRASES), e.y - 190); }
+        if (e.shootT <= 0 && adx < 620 && adx > 60) { e.shootT = rnd(3.2, 4.2); if (officeShots() < 2) { e.talk = .5; officePhrase(e, pick(COLLEAGUE_PHRASES), e.y - 190); } }
       } else { e.x += e.leave * 120 * dt; e.leaveT -= dt; if (e.leaveT < 0) e.dead = true; }
       return true;
     case 'printer':
       e.shootT -= dt;
-      if (!e.calm && e.shootT <= 0 && adx < 720) {
-        e.shootT = rnd(1.6, 2.2); e.jam = .3; sfx.thud();
+      if (!e.calm && e.shootT <= 0 && adx < 600 && officeShots() < 2) {
+        e.shootT = rnd(3, 3.8); e.jam = .3; sfx.thud();
         const sx = e.x, sy = e.y - 80, T = .9, tx = P.x + P.vx * .2, ty = P.y - 120;
         foes.push({ kind: 'paper', x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy - .5 * G * .5 * T * T) / T, w: 34, h: 26, grav: .5, life: 3, pop: true, rot: 0 });
       }
@@ -406,20 +406,21 @@ function updOfficeEnt(e, dt, dx, adx) {
     case 'zoomwin':
       e.t2 = (e.t2 || 0) + dt;
       if (!e.calm) {
-        const tx = P.x + Math.sin(e.t2 * .8 + e.seed) * 260, ty = P.y - 330 + Math.sin(e.t2 * 2) * 26;
-        e.x += (tx - e.x) * Math.min(1, dt * .9); e.y += (ty - e.y) * Math.min(1, dt * 2);
+        const tx = P.x + 260 + Math.sin(e.t2 * .6 + e.seed) * 160, ty = P.y - 340 + Math.sin(e.t2 * 2) * 26;
+        e.x += (tx - e.x) * Math.min(1, dt * .5); e.y += (ty - e.y) * Math.min(1, dt * 2);
         e.shootT -= dt;
-        if (e.shootT <= 0 && adx < 700) { e.shootT = rnd(2.2, 3); officePhrase(e, pick(ZOOM_PHRASES), e.y + 40); }
+        if (e.shootT <= 0 && adx < 600) { e.shootT = rnd(3.6, 4.6); if (officeShots() < 2) officePhrase(e, pick(ZOOM_PHRASES), e.y + 40); }
       } else { e.y -= 160 * dt; e.leaveT -= dt; if (e.leaveT < 0) e.dead = true; }
       return true;
   }
   return false;
 }
+const officeShots = () => foes.filter(f => !f.boss).length;
 function officePhrase(e, text, sy) {
   ctx.font = `700 20px ${FB}`;
   const w = ctx.measureText(text).width + 28, sx = e.x + (e.facing || -1) * 30;
   const tx = P.x, ty = P.y - 140, d = Math.hypot(tx - sx, ty - sy) || 1;
-  foes.push({ kind: 'phrase', text, x: sx, y: sy, vx: (tx - sx) / d * 240, vy: (ty - sy) / d * 240, w, h: 40, life: 5, pop: true, office: true });
+  foes.push({ kind: 'phrase', text, x: sx, y: sy, vx: (tx - sx) / d * 200, vy: (ty - sy) / d * 200, w, h: 40, life: 5.5, pop: true, office: true, boss: !!e.boss });
 }
 // called when an office enemy runs out of hp; returns true if handled (calmed instead of trapped)
 function calmOffice(e) {
@@ -491,7 +492,7 @@ function updOutlook(dt) {
     case 'hover': {
       const tx = ARENA_X + W / 2 + Math.sin(b.anim * .6) * 330;
       b.x = lerp(b.x, tx, Math.min(1, dt * 1.3)); b.y = lerp(b.y, b.baseY + Math.sin(b.anim * 2) * 16, Math.min(1, dt * 3));
-      if (b.st > (ph === 3 ? .8 : ph === 2 ? 1.05 : 1.3)) {
+      if (b.st > (ph === 3 ? 1.25 : ph === 2 ? 1.5 : 1.8)) {
         const pool = ['mails', 'invites'];
         if (ph >= 2) pool.push('replyall', 'swoopprep');
         if (ph >= 3) pool.push('heads', 'heads');
@@ -501,15 +502,15 @@ function updOutlook(dt) {
       break;
     }
     case 'mails': {
-      const n = ph === 1 ? 2 : 3;
-      for (let k = 0; k < n; k++) if (!b['v' + (k + 1)] && b.st > .3 + k * .35) { b['v' + (k + 1)] = 1; mailVolley(b, ph === 1 ? 3 : 4); }
-      if (b.st > .5 + n * .35) oSet('hover');
+      const n = ph === 1 ? 1 : 2;
+      for (let k = 0; k < n; k++) if (!b['v' + (k + 1)] && b.st > .3 + k * .6) { b['v' + (k + 1)] = 1; mailVolley(b, ph === 3 ? 4 : 3); }
+      if (b.st > .6 + n * .6) oSet('hover');
       break;
     }
     case 'invites':
       if (!b.v1 && b.st > .2) {
         b.v1 = 1; b.mouth = 1; word('ПРИГЛАШЕНИЕ!', b.x, b.y - 110, '#bff3ff', 26);
-        const offs = ph >= 3 ? [-260, -130, 0, 130, 260] : [-150, 0, 150];
+        const offs = ph >= 3 ? [-180, 0, 180] : [-110, 110];
         offs.forEach((o, i) => foes.push({ kind: 'invite', text: pick(['Встреча 9:00', 'Синк', 'Дейли', 'Статус', 'Ретро', 'Планёрка']), x: clamp(P.x + o, ARENA_X + 60, ARENA_X + W - 60), y: -50, vx: 0, vy: 0, w: 96, h: 70, grav: .45, life: 4, pop: true, warn: .7 + i * .08 }));
       }
       if (b.st > 1.5) oSet('hover');
@@ -517,8 +518,8 @@ function updOutlook(dt) {
     case 'replyall':
       if (!b.v1 && b.st > .45) {
         b.v1 = 1; b.mouth = 1; sfx.horn(); word('ОТВЕТИТЬ ВСЕМ!', b.x, b.y - 120, '#ff8fb1', 28);
-        const n = ph >= 3 ? 14 : 10;
-        for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; foes.push({ kind: 'mail', text: pick(['Re:', 'Fwd:', 'Re: Re:']), x: b.x, y: b.y, vx: Math.cos(a) * 250, vy: Math.sin(a) * 250, w: 44, h: 30, life: 4, pop: true }); }
+        const n = ph >= 3 ? 8 : 6;
+        for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; foes.push({ kind: 'mail', text: pick(['Re:', 'Fwd:', 'Re: Re:']), x: b.x, y: b.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, w: 44, h: 30, life: 4, pop: true }); }
       }
       if (b.st > 1.3) oSet('hover');
       break;
@@ -539,7 +540,7 @@ function updOutlook(dt) {
       b.heads = Math.min(1, b.st * 2.5);
       if (b.st > .5) for (let k = 0; k < 3; k++) {
         const key = 'h' + k; b[key] = (b[key] || 0) - dt;
-        if (b[key] <= 0) { b[key] = rnd(.9, 1.4); const hp2 = headPos(b, k); officePhrase({ x: hp2.x, facing: dx > 0 ? 1 : -1 }, pick(STAKE_PHRASES), hp2.y); }
+        if (b[key] <= 0) { b[key] = rnd(1.8, 2.6) + k * .4; const hp2 = headPos(b, k); officePhrase({ x: hp2.x, facing: dx > 0 ? 1 : -1, boss: true }, pick(STAKE_PHRASES), hp2.y); }
       }
       if (b.st > 3.4) { b.heads = 0; b.h0 = b.h1 = b.h2 = 0; oSet('hover'); }
       break;
@@ -558,7 +559,7 @@ function mailVolley(b, n) {
   const base = Math.atan2(P.y - 140 - b.y, P.x - b.x);
   for (let i = 0; i < n; i++) {
     const a = base + (i - (n - 1) / 2) * .16;
-    foes.push({ kind: 'mail', text: pick(['Re:', 'Fwd:', 'СРОЧНО', '!!!', 'Re: Re:']), x: b.x, y: b.y + 20, vx: Math.cos(a) * 330, vy: Math.sin(a) * 330, w: 44, h: 30, life: 4, pop: true });
+    foes.push({ kind: 'mail', text: pick(['Re:', 'Fwd:', 'СРОЧНО', '!!!', 'Re: Re:']), x: b.x, y: b.y + 20, vx: Math.cos(a) * 280, vy: Math.sin(a) * 280, w: 44, h: 30, life: 4, pop: true });
   }
 }
 function outlookHit(s) {
@@ -2944,7 +2945,7 @@ window.__gainulka = {
   get state() { return state; }, set state(v) { state = v; stateT = 0; },
   P, get boss() { return boss; }, get level() { return level; }, start(lv) { if (lv) level = lv; startGame(); },
   hit(v) { if (boss && boss.kind === 'outlook') { boss.hp = Math.max(0, boss.hp - v); if (boss.hp <= 0) startEnding2(); } else addFriend(v); }, warp(x) { P.x = x; cam.x = clamp(x - 400, 0, ARENA_X); },
-  friend(v) { addFriend(v); },
+  friend(v) { addFriend(v); }, get foes() { return foes.length; },
   closeup(sc, opts = {}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#e9e1d4'; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.scale(sc, sc);
