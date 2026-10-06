@@ -434,7 +434,9 @@ function updEnt(e, dt) {
 const PHRASES = ['Син Раиф кызымы?', 'Син Әлфия кызымы?', 'Ничек үскәнсең!', 'Кечкенә чагыңны хәтерлим!', 'Сез тулай торакта яшәдегезме?', 'Сиңа ничә яшь?'];
 function phrase(e) {
   ctx.font = `700 20px ${FB}`;
-  const text = pick(PHRASES), w = ctx.measureText(text).width + 28;
+  // every babushka opens with «whose daughter are you?», then moves on to the rest
+  e.said = (e.said || 0) + 1;
+  const text = e.said <= 2 ? PHRASES[e.said - 1] : pick(PHRASES.slice(2)), w = ctx.measureText(text).width + 28;
   const sx = e.x + e.facing * 30, sy = e.y - 130;
   const tx = P.x, ty = P.y - 140, d = Math.hypot(tx - sx, ty - sy) || 1;
   foes.push({ kind: 'phrase', text, x: sx, y: sy, vx: (tx - sx) / d * 230, vy: (ty - sy) / d * 230, w, h: 40, life: 5, pop: true });
