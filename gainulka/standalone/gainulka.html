@@ -320,6 +320,7 @@ const STAKE_PHRASES = ['Ещё фичу!', 'Сроки вчера!', 'А мож�
 
 function desk(x, w = 200) { props.push({ t: 'desk', x, w }); addPlat(x, GROUND - 92, w); }
 function buildLevel2() {
+  dianaSay.t = 0; dianaSay.next = 3; dianaSay.bag = [];
   ents = []; shots = []; foes = []; items = []; parts = []; treats = []; props = []; platforms = [];
   boss = null; cam.lock = false; daisies = 0; bubbles = 0; runTime = 0;
 
@@ -421,6 +422,31 @@ function updOfficeEnt(e, dt, dx, adx) {
   return false;
 }
 const officeShots = () => foes.filter(f => !f.boss).length;
+// Diana's own one-liners: a speech bubble above her head every 8–12 seconds
+const DIANA_PHRASES = ['Типа-типа', 'Должен будешь!', 'ЕГЭ 91 балл', 'Вы хоть знаете, кто мой муж!?', 'Эх, сейчас бы в Кушкуль...', 'Хочу грибы собирать, а не вот это всё'];
+const dianaSay = { t: 0, next: 3, text: '', bag: [] };
+function updDianaSay(dt) {
+  dianaSay.t -= dt; dianaSay.next -= dt;
+  if (dianaSay.next <= 0) {
+    if (!dianaSay.bag.length) dianaSay.bag = DIANA_PHRASES.slice().sort(() => Math.random() - .5);
+    dianaSay.text = dianaSay.bag.pop(); dianaSay.t = 2.8; dianaSay.next = rnd(8, 12);
+    sfx.collect();
+  }
+}
+function drawDianaSay() {
+  const k = 2.8 - dianaSay.t, pop = k < .18 ? .4 + k / .18 * .7 : k < .3 ? 1.1 - (k - .18) / .12 * .1 : 1;
+  const fade = Math.min(1, dianaSay.t / .3);
+  ctx.font = `700 21px ${FB}`;
+  const tw = ctx.measureText(dianaSay.text).width + 34, th = 46;
+  const x = clamp(P.x - cam.x + P.facing * 30, tw / 2 + 10, W - tw / 2 - 10), y = P.y - 300;
+  ctx.save(); ctx.globalAlpha = fade; ctx.translate(x, y); ctx.scale(pop, pop); ctx.rotate(-.02);
+  rr(-tw / 2, -th / 2, tw, th, 20); fs('#fff', 4);
+  const tx = clamp(P.x - cam.x - x, -tw / 2 + 24, tw / 2 - 24);
+  ctx.beginPath(); ctx.moveTo(tx - 12, th / 2 - 3); ctx.lineTo(tx - 2, th / 2 + 18); ctx.lineTo(tx + 10, th / 2 - 3); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(tx - 12, th / 2); ctx.lineTo(tx - 2, th / 2 + 18); ctx.lineTo(tx + 10, th / 2); ink(4); ctx.stroke();
+  bodyText(dianaSay.text, 0, 1, 21, '#c43a5c', 'center', 900);
+  ctx.restore();
+}
 function officePhrase(e, text, sy) {
   ctx.font = `700 20px ${FB}`;
   const w = ctx.measureText(text).width + 28, sx = e.x + (e.facing || -1) * 30;
@@ -1016,6 +1042,7 @@ function update(dt) {
     runTime += dt;
     if (pressed.KeyP || pressed.Escape) { state = 'paused'; return; }
     updatePlayer(dt);
+    if (level === 2) updDianaSay(dt);
     if (P.x > LEVELS[level].cp && checkpoint < LEVELS[level].cp) { checkpoint = LEVELS[level].cpX; word('ЧЕКПОИНТ', P.x, P.y - 270, '#bff3ff', 26); }
     if (!cam.lock && P.x > ARENA_X + 330) {
       cam.lock = true; (level === 2 ? spawnOutlook : spawnBoss)(); state = 'bossintro'; stateT = 0; music.song = null; foes = [];
@@ -2964,6 +2991,7 @@ function render() {
     let gy = GROUND;
     for (const pl of platforms) if (P.x > pl.x - 8 && P.x < pl.x + pl.w + 8 && P.y <= pl.y + 1 && pl.y < gy) gy = pl.y;
     if (!pairHug) drawDiana(P.x - cam.x, P.y, { facing: P.facing, ph: P.ph, air: !P.onGround && state === 'play', vx: P.vx, vy: P.vy, hurt: P.inv > 1.0 && state === 'play', aim: P.aim, pose: P.pose, shootAnim: P.shootAnim, blink, groundY: gy, happy: state === 'ending', lean: P.lean });
+    if (level === 2 && dianaSay.t > 0 && state === 'play') drawDianaSay();
     if (boss && rockyInArms && !pairHug) drawRocky(boss.x - cam.x + (boss.hugShift || 0) * boss.facing, boss.y, boss);
     for (const s of shots) s.kind ? drawWineShot(s) : drawShot(s);
     for (const f of foes) drawFoe(f);
