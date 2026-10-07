@@ -16,9 +16,14 @@ html,body{height:100%}
 body{margin:0;background:var(--ground);color:var(--paper);font-family:var(--font-body);display:flex;align-items:center;justify-content:center;overflow:hidden}
 canvas{display:block;background:var(--ink);cursor:crosshair;image-rendering:auto;box-shadow:0 0 0 1px rgba(255,255,255,.04),0 30px 80px rgba(0,0,0,.6)}
 canvas:focus-visible{outline:3px solid #ff8fb1;outline-offset:2px}
+canvas{max-width:100vw;max-height:100vh;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#rotate{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:var(--ground);color:var(--paper);font-family:var(--font-body);font-weight:700;font-size:20px;text-align:center;padding:24px}
+#rotate b{font-family:var(--font-display);font-size:26px;color:#ff8fb1}
+@media (pointer:coarse) and (orientation:portrait){#rotate{display:flex}}
 </style>
 
 <canvas id="game" width="1280" height="720" tabindex="0" aria-label="Игра «Гайнулка»"></canvas>
+<div id="rotate"><b>ГАЙНУЛКА</b><div>Поверни телефон горизонтально</div><div style="font-size:44px">⟳</div></div>
 
 <script>
 (() => {
@@ -36,11 +41,12 @@ const FD = "'Rubik Mono One','Arial Black',Impact,sans-serif";
 const FB = "'Rubik',system-ui,-apple-system,'Segoe UI',sans-serif";
 
 function resize() {
-  const s = Math.min(innerWidth / W, innerHeight / H);
+  const vv = window.visualViewport, vw = Math.min(innerWidth, vv ? vv.width : innerWidth, document.documentElement.clientWidth || innerWidth), vh = Math.min(innerHeight, vv ? vv.height : innerHeight);
+  const s = Math.min(vw / W, vh / H);
   cv.style.width = Math.floor(W * s) + 'px';
   cv.style.height = Math.floor(H * s) + 'px';
 }
-addEventListener('resize', resize); resize();
+addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 200)); resize();
 if (document.fonts && document.fonts.load) {
   document.fonts.load('40px "Rubik Mono One"').catch(() => {});
   document.fonts.load('700 20px "Rubik"').catch(() => {});
@@ -81,6 +87,7 @@ function comicText(txt, x, y, size, fill, rot = 0, lw) {
   ctx.restore();
 }
 function bodyText(txt, x, y, size, fill, align = 'center', weight = 700) {
+  if (TOUCH && txt.startsWith('Кликни')) txt = 'Нажми' + txt.slice(6);
   ctx.font = `${weight} ${size}px ${FB}`; ctx.textAlign = align; ctx.textBaseline = 'middle';
   ctx.fillStyle = fill; ctx.fillText(txt, x, y);
 }
@@ -112,6 +119,107 @@ cv.addEventListener('wheel', e => { e.preventDefault(); mouse.wheel = Math.sign(
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; mouse.rdown = false; if (state === 'play') state = 'paused'; });
 function consume() { for (const k in pressed) delete pressed[k]; mouse.clicked = false; mouse.rclicked = false; mouse.wheel = 0; }
 const anyStart = () => mouse.clicked || pressed.Enter || pressed.Space;
+
+/* ---------------- touch controls (mobile) ---------------- */
+const TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || /touch/.test(location.hash);
+const TBTN = {
+  left: { x: 95, y: 615, r: 62, icon: '◀' },
+  right: { x: 245, y: 615, r: 62, icon: '▶' },
+  jump: { x: 1185, y: 600, r: 70, icon: '⤒' },
+  fire: { x: 1035, y: 640, r: 62, icon: '' },
+  alt: { x: 1060, y: 500, r: 50, icon: '' },
+  alt2: { x: 1190, y: 445, r: 46, icon: '' },
+};
+const touchHeld = {}, touchIds = new Map();
+function touchButtons() {
+  // which on-screen buttons exist right now (the set depends on the level and the fight)
+  const b = { left: 1, right: 1, jump: 1, fire: 1 };
+  if (level === 1 && boss && boss.kind === 'rocky' && boss.state !== 'tamed') b.alt = 1;
+  if (level === 2) b.alt = 1;
+  if (level === 3) { b.alt = 1; if (boss && boss.kind === 'yasha') b.alt2 = 1; }
+  return b;
+}
+function btnAt(x, y) {
+  const on = touchButtons();
+  for (const k in on) { const t = TBTN[k]; if (Math.hypot(x - t.x, y - t.y) < t.r * 1.25) return k; }
+  return null;
+}
+function touchPoint(t) { const r = cv.getBoundingClientRect(); return [(t.clientX - r.left) / r.width * W, (t.clientY - r.top) / r.height * H]; }
+function onTouch(e) {
+  e.preventDefault(); audio.init();
+  if (e.type === 'touchstart' && !document.fullscreenElement && cv.requestFullscreen) { cv.parentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {}); }
+  const playing = state === 'play';
+  for (const t of e.changedTouches) {
+    const [x, y] = touchPoint(t);
+    if (e.type === 'touchstart') {
+      const k = playing ? btnAt(x, y) : null;
+      touchIds.set(t.identifier, k);
+      if (k) onBtnDown(k); else { mouse.x = x; mouse.y = y; mouse.clicked = true; }
+    } else if (e.type === 'touchmove') {
+      const old = touchIds.get(t.identifier);
+      if (old === 'left' || old === 'right') { const k = btnAt(x, y); if (k === 'left' || k === 'right') touchIds.set(t.identifier, k); }
+    } else { touchIds.delete(t.identifier); }
+  }
+  for (const k in touchHeld) touchHeld[k] = false;
+  for (const k of touchIds.values()) if (k) touchHeld[k] = true;
+  keys.KeyA = !!touchHeld.left; keys.KeyD = !!touchHeld.right; keys.Space = !!touchHeld.jump;
+  applyHolds();
+}
+function onBtnDown(k) {
+  if (k === 'jump') pressed.Space = true;
+  if (k === 'fire') mouse.clicked = false;
+  if (k === 'alt') {
+    if (level === 1) pressed.KeyE = true;
+    if (level === 2) pressed.KeyQ = true;
+    if (level === 3 && !(boss && boss.kind === 'yasha')) pressed.KeyE = true;
+  }
+  if (k === 'alt2') pressed.KeyE = true;
+}
+function applyHolds() {
+  const fight3 = level === 3 && boss && boss.kind === 'yasha';
+  mouse.down = !!touchHeld.fire;
+  mouse.rdown = fight3 && !!touchHeld.alt;
+}
+if (TOUCH) {
+  for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) cv.addEventListener(ev, onTouch, { passive: false });
+}
+// auto-aim: point the "mouse" at the nearest target in front of Diana
+function touchAim() {
+  if (touchHeld.left) P.tFacing = -1; else if (touchHeld.right) P.tFacing = 1;
+  const f = P.tFacing || 1, hx = P.x, hy = P.y - 170;
+  let best = null, bd = 760;
+  const consider = (x, y) => { const dx = (x - hx) * f; if (dx < 20) return; const d = Math.hypot(x - hx, y - hy); if (d < bd) { bd = d; best = [x, y]; } };
+  for (const e of ents) { if (e.dead || e.trapped || e.calm || e.type === 'puddle' || e.type === 'bustrig' || e.type === 'taxi') continue; const b = entBox(e); if (b) consider((b.l + b.r) / 2, (b.t + b.b) / 2); }
+  if (boss) {
+    if (boss.kind === 'outlook') { if (boss.state !== 'defeated') consider(boss.x, boss.y); }
+    else if (boss.kind === 'yasha') { if (!(boss.tvOff > 0) && (boss.lying || boss.state === 'ult')) { const c = CONSOLE(); consider((c.l + c.r) / 2, (c.t + c.b) / 2); } else consider(boss.x, boss.y - 150); }
+    else consider(boss.x, boss.y - 90);
+  }
+  if (level === 3 && P.sucking && !(boss && boss.kind === 'yasha')) best = null;
+  const [tx, ty] = best || [hx + f * 400, hy + (level === 3 && !(boss && boss.kind === 'yasha') ? 140 : -10)];
+  mouse.x = tx - cam.x; mouse.y = ty;
+}
+function drawTouchUI() {
+  if (!TOUCH || state !== 'play') return;
+  const on = touchButtons(), fight3 = level === 3 && boss && boss.kind === 'yasha';
+  const label = {
+    fire: level === 1 ? 'пузыри' : level === 2 ? 'вино' : fight3 ? 'поцелуй' : 'пылесос',
+    alt: level === 1 ? 'вкусняшка' : level === 2 ? 'сменить' : fight3 ? 'пылесос' : 'выстрел',
+    alt2: 'выстрел', jump: 'прыжок', left: '', right: '',
+  };
+  for (const k in on) {
+    const t = TBTN[k], held = touchHeld[k];
+    ctx.save(); ctx.globalAlpha = held ? .85 : .5;
+    ell(t.x, t.y, t.r, t.r); ctx.fillStyle = held ? '#fff3df' : 'rgba(27,20,17,.55)'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#fff3df'; ctx.stroke();
+    ctx.globalAlpha = held ? 1 : .9;
+    const ic = held ? INK : '#fff3df';
+    if (k === 'left' || k === 'right' || k === 'jump') comicText(t.icon, t.x, t.y - (label[k] ? 6 : 0), k === 'jump' ? 34 : 30, ic, 0, 0);
+    else if (k === 'fire' && (level !== 3 || fight3)) { heartPath(t.x, t.y - 6, 30); ctx.fillStyle = level === 1 ? '#bff3ff' : level === 2 ? '#e2c25a' : '#ff5c8a'; ctx.fill(); }
+    else { ell(t.x, t.y - 6, 12, 12); ctx.fillStyle = k === 'alt2' || (k === 'alt' && level === 3 && !fight3) ? '#ffe14d' : '#f6b8cf'; ctx.fill(); }
+    if (label[k]) bodyText(label[k], t.x, t.y + t.r * .55, 13, ic, 'center', 900);
+    ctx.restore();
+  }
+}
 
 /* ---------------- audio ---------------- */
 const audio = {
@@ -1057,6 +1165,7 @@ function updatePlayer(dt) {
   p.inv -= dt; p.cool -= dt; p.treatCool -= dt; p.shootAnim -= dt;
 
   if (p.ctrl) {
+    if (TOUCH) touchAim();
     const sx = p.x - cam.x + p.facing * 12, sy = p.y - 188;
     p.facing = mouse.x >= sx ? 1 : -1;
     p.aim = clamp(Math.atan2(mouse.y - sy, Math.abs(mouse.x - sx)), -1.25, 1.1);
@@ -3469,23 +3578,23 @@ function drawHUD() {
   if (level === 2 && state === 'play') {
     // wine selector
     for (let i = 0; i < 3; i++) {
-      const wx = 40 + i * 74, wy = H - 70, sel = (P.weapon || 0) === i, wn = WINES[i];
+      const wx = 40 + i * 74, wy = TOUCH ? 190 : H - 70, sel = (P.weapon || 0) === i, wn = WINES[i];
       rr(wx - 4, wy - 34, 66, 68, 10); fs(sel ? '#fff3df' : 'rgba(255,243,223,.25)', sel ? 4 : 3);
       ctx.save(); ctx.translate(wx + 29, wy + 2); ctx.rotate(-.5);
       rr(-9, -6, 18, 32, 6); fs(wn.glass, 2.5); rr(-4, -20, 8, 16, 3); fs(wn.glass, 2); rr(-4, -24, 8, 6, 2); fs(wn.foil, 1.5); rr(-7, 2, 14, 12, 2); fs(wn.label, 1.5);
       ctx.restore();
       bodyText(String(i + 1), wx + 8, wy - 22, 14, sel ? '#7a1a26' : '#fff3df', 'center', 900);
     }
-    bodyText(WINES[P.weapon || 0].name + '  ·  1 2 3 / Q', 40, H - 120, 16, '#fff3df', 'left', 900);
+    bodyText(WINES[P.weapon || 0].name + (TOUCH ? '' : '  ·  1 2 3 / Q'), 40, TOUCH ? 140 : H - 120, 16, '#fff3df', 'left', 900);
   }
-  if (level === 3 && state === 'play' && !(boss && boss.kind === 'yasha')) {
+  if (level === 3 && state === 'play' && !(boss && boss.kind === 'yasha') && !TOUCH) {
     const n = (P.ammo || []).length;
     rr(30, H - 96, 210, 66, 12); fs('rgba(255,243,223,.9)', 3.5);
     rr(44, H - 84, 34, 42, 8); fs('#f6b8cf', 2.5); ctx.fillStyle = '#a8a29c'; ctx.fillRect(49, H - 48 - 30 * n / 12, 24, 30 * n / 12);
     bodyText(`в пылесосе: ${n}/12`, 90, H - 74, 15, INK, 'left', 900);
     bodyText('ЛКМ — всасывать · ПКМ/E — выстрел', 90, H - 50, 11, '#7a1a26', 'left', 700);
   }
-  if (level === 3 && state === 'play' && boss && boss.kind === 'yasha') {
+  if (level === 3 && state === 'play' && boss && boss.kind === 'yasha' && !TOUCH) {
     const n = (P.ammo || []).length;
     rr(30, H - 96, 330, 66, 12); fs('rgba(255,243,223,.9)', 3.5); heartPath(58, H - 64, 28); fs('#ff4f7f', 2.5);
     bodyText('ЛКМ — поцелуй · ПКМ — пылесос', 82, H - 74, 14, INK, 'left', 900);
@@ -3514,16 +3623,19 @@ function drawHUD() {
     bodyText(k < 1 ? `дружба ${Math.floor(boss.f)}%` : 'лучшие друзья', W / 2, by + 23, 13, '#fff3df', 'center', 900);
     // treat button
     if (state === 'play') {
+      if (TOUCH) { /* the on-screen button replaces it */ } else {
       const tx = 60, ty = H - 60, ready = P.treatCool <= 0;
       ell(tx, ty, 34, 34); fs(ready ? '#ffd36b' : 'rgba(255,211,107,.35)', 4);
       drawTreat({ x: tx + cam.x, y: ty, rot: -.4 });
       if (!ready) { ctx.beginPath(); ctx.moveTo(tx, ty); ctx.arc(tx, ty, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (P.treatCool / 3.5)); ctx.closePath(); ctx.fillStyle = 'rgba(27,20,17,.55)'; ctx.fill(); }
       bodyText('E / ПКМ', tx + 44, ty, 15, '#fff3df', 'left', 900);
+      }
     }
   }
   if (audio.muted) bodyText('звук выкл · M', W - 20, H - 24, 14, '#fff3df', 'right');
 }
 function drawCursor() {
+  if (TOUCH) return drawTouchUI();
   if (state !== 'play') return;
   const x = mouse.x, y = mouse.y;
   ctx.beginPath(); ctx.arc(x, y, 12, 0, 7); ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = '#ff7fb2'; ctx.lineWidth = 3; ctx.stroke();
@@ -3573,7 +3685,7 @@ function drawTitle() {
     ctx.restore();
   }
   if (Math.floor(time * 2) % 2) bodyText('Выбери уровень', W / 2, 560, 20, '#fff3df', 'center', 900);
-  bodyText('лучше играть на компьютере · M — звук', W / 2, 690, 15, 'rgba(255,243,223,.75)');
+  bodyText(TOUCH ? 'держи телефон горизонтально · нажми на уровень' : 'лучше играть на компьютере · M — звук', W / 2, 690, 15, 'rgba(255,243,223,.75)');
 }
 function drawStory() {
   ctx.fillStyle = 'rgba(20,10,22,.55)'; ctx.fillRect(0, 0, W, H);
