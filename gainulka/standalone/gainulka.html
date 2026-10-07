@@ -109,12 +109,12 @@ function toCanvas(e) {
 cv.addEventListener('mousemove', toCanvas);
 cv.addEventListener('mousedown', e => {
   toCanvas(e); audio.init(); cv.focus();
-  if (e.button === 2) mouse.rclicked = true; else { mouse.down = true; mouse.clicked = true; }
+  if (e.button === 2) { mouse.rclicked = true; mouse.rdown = true; } else { mouse.down = true; mouse.clicked = true; }
 });
-addEventListener('mouseup', e => { if (e.button !== 2) mouse.down = false; });
+addEventListener('mouseup', e => { if (e.button !== 2) mouse.down = false; else mouse.rdown = false; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 cv.addEventListener('wheel', e => { e.preventDefault(); mouse.wheel = Math.sign(e.deltaY); }, { passive: false });
-addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; if (state === 'play') state = 'paused'; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; mouse.rdown = false; if (state === 'play') state = 'paused'; });
 function consume() { for (const k in pressed) delete pressed[k]; mouse.clicked = false; mouse.rclicked = false; mouse.wheel = 0; }
 const anyStart = () => mouse.clicked || pressed.Enter || pressed.Space;
 
@@ -287,6 +287,7 @@ function mk(type, x, y, air) {
   if (type === 'dust') { e.hp = 1; e.harm = true; }
   if (type === 'cup') { e.hp = 3; e.shootT = 1.5; e.jig = 0; }
   if (type === 'laundry') { e.hp = 5; e.hopT = 1; e.harm = true; e.onGround = true; }
+  if (type === 'floorsock') { e.hp = 1; e.rot = rnd(-.5, .5); }
   if (type === 'mosquito') { e.hp = 1; e.dive = rnd(1.5, 3); e.harm = true; }
   if (type === 'towel') { e.hp = 2; e.dive = rnd(1.5, 2.5); e.harm = true; }
   if (type === 'clock') { e.hp = 2; e.hopT = rnd(.4, 1.2); e.harm = true; e.onGround = true; e.ring = 0; }
@@ -309,6 +310,7 @@ function entBox(e) {
     case 'cup': return { l: e.x - 20, r: e.x + 20, t: e.y - 46, b: e.y };
     case 'laundry': return { l: e.x - 46, r: e.x + 46, t: e.y - 70, b: e.y };
     case 'towel': return { l: e.x - 34, r: e.x + 34, t: e.y - 20, b: e.y + 20 };
+    case 'floorsock': return { l: e.x - 22, r: e.x + 22, t: e.y - 14, b: e.y };
     case 'mosquito': return { l: e.x - 16, r: e.x + 16, t: e.y - 12, b: e.y + 12 };
     case 'ticket': return { l: e.x - 30, r: e.x + 30, t: e.y - 22, b: e.y + 22 };
     case 'colleague': return { l: e.x - 26, r: e.x + 26, t: e.y - 218, b: e.y - 10 };
@@ -703,7 +705,7 @@ function buildLevel3() {
   items.push({ type: 'heart', x: 3980, y: 430, ph: 1 });
   items.push({ type: 'heart', x: 5400, y: 530, ph: 2 });
 }
-const SUCKABLE = { sock: 1, crumb: 1, core: 1, dust: 1, mosquito: 1 };
+const SUCKABLE = { sock: 1, crumb: 1, core: 1, dust: 1, mosquito: 1, floorsock: 1 };
 
 function updHomeEnt(e, dt, dx, adx) {
   switch (e.type) {
@@ -745,6 +747,13 @@ function updHomeEnt(e, dt, dx, adx) {
       if (e.y >= GROUND) { if (!e.onGround) { dust(e.x, GROUND, 4); } e.y = GROUND; e.vy = 0; e.onGround = true; e.vx *= .8; } else e.onGround = false;
       e.hopT -= dt; e.facing = dx > 0 ? 1 : -1;
       if (e.onGround && e.hopT <= 0 && adx < 600) { e.vy = -420; e.vx = Math.sign(dx) * 130; e.hopT = rnd(1.6, 2.2); e.onGround = false; sfx.thud(); }
+      return true;
+    case 'floorsock':
+      e.x += (e.vx || 0) * dt; e.vx = (e.vx || 0) * Math.pow(.2, dt);
+      if (state === 'play' && P.onGround && P.y >= GROUND - 1 && Math.abs(P.x - e.x) < 24 && Math.abs(P.vx) > 80 && !(P.slipT > 0)) {
+        P.slipT = .65; P.vx = Math.sign(P.vx) * 600; e.vx = Math.sign(P.vx) * 500;
+        word(pick(['ВЖУХ!', 'ОЙ-ОЙ!', 'СКОЛЬЗКО!']), P.x, P.y - 270, '#bff3ff', 24); audio.tone(900, .35, 'sine', .08, -700); cam.shake = 4;
+      }
       return true;
     case 'mosquito': {
       // jittery flight around her head, a quick bite dive now and then
@@ -792,7 +801,8 @@ function cleanHome(e) {
 
 /* ----- vacuum ----- */
 function updVacuum(dt) {
-  P.sucking = P.ctrl && (mouse.down || keys.KeyJ) && !(boss && boss.kind === 'yasha');
+  const fight = boss && boss.kind === 'yasha';
+  P.sucking = P.ctrl && (fight ? (mouse.rdown || keys.KeyF) : (mouse.down || keys.KeyJ));
   if (!P.sucking) { P.suckSnd = 0; return; }
   const m = muzzle(), dir = Math.atan2(m.dy, m.dx);
   P.suckSnd -= dt; if (P.suckSnd <= 0) { P.suckSnd = .18; audio.noise(.2, .05, 900); }
@@ -851,12 +861,13 @@ const yashaPhase = () => boss.f >= 70 ? 3 : boss.f >= 35 ? 2 : 1;
 function yashaBox() { return { l: boss.x - 34, r: boss.x + 34, t: boss.y - 236 + boss.lie * 140, b: boss.y - 4 }; }
 function updYasha(dt) {
   const b = boss; b.st += dt; b.anim += dt; b.flash -= dt; b.sayT -= dt;
+  if (b.tvOff > 0) { b.tvOff -= dt; if (b.tvOff <= 0) { b.say = 'Так, включу обратно...'; b.sayT = 2; } }
   const ph = yashaPhase(), dx = P.x - b.x;
   b.vy += G * dt; b.y += b.vy * dt; b.x += b.vx * dt;
   if (b.y >= GROUND) { b.y = GROUND; b.vy = 0; b.onGround = true; } else b.onGround = false;
   b.x = clamp(b.x, ARENA_X + 80, ARENA_X + W - 80);
   const face = () => { b.facing = dx > 0 ? 1 : -1; };
-  if (b.state !== 'sofa' && b.state !== 'standup' && b.state !== 'lie' && b.state !== 'defeated') {
+  if (!['sofa', 'standup', 'lie', 'defeated', 'stunned', 'ult'].includes(b.state)) {
     b.sayNext -= dt;
     if (b.sayNext <= 0) { b.say = pick(YASHA_SAY); b.sayT = 2.2; b.sayNext = rnd(5, 8); }
   }
@@ -872,6 +883,11 @@ function updYasha(dt) {
       b.sit = clamp(1 - (b.st - .6) / .5, 0, 1);
       if (b.st > 1.1) { b.vx = -150; }
       if (b.st > 1.9) { b.vx = 0; ySet('idle'); }
+      break;
+    case 'stunned':
+      b.vx = 0; b.stun -= dt;
+      if (Math.random() < dt * 4) part({ x: b.x + rnd(-20, 20), y: b.y - 250, vy: -40, life: .8, max: .8, kind: 'text', text: '?', color: '#ffe14d', size: 26, rot: rnd(-.3, .3) });
+      if (b.stun <= 0) ySet('idle');
       break;
     case 'idle': {
       face(); b.vx *= Math.pow(.05, dt);
@@ -933,16 +949,37 @@ function updYasha(dt) {
       break;
     }
   }
-  if (state === 'play' && !['sofa', 'standup', 'ult', 'defeated'].includes(b.state) && overlap(yashaBox(), pBox())) hurtPlayer(b.x);
+  if (state === 'play' && !['sofa', 'standup', 'ult', 'defeated', 'stunned'].includes(b.state) && overlap(yashaBox(), pBox())) hurtPlayer(b.x);
+}
+const CONSOLE = () => ({ l: ARENA_X + 1100, r: ARENA_X + 1182, t: 290, b: 324 });
+function consoleHit(s) {
+  const b = boss, c = CONSOLE();
+  if (!b || b.state === 'defeated' || b.state === 'standup' || b.tvOff > 0) return false;
+  if (!(s.x + s.r > c.l && s.x - s.r < c.r && s.y + s.r > c.t && s.y - s.r < c.b)) return false;
+  b.tvOff = 10; b.stun = 3; b.lie = 0; b.lying = false; b.pad = false; b.vx = 0; ySet('stunned');
+  b.say = pick(['Я же не сохранился!', 'НЕЕЕТ! Мой сейв!', 'Кто выключил?!']); b.sayT = 2.6;
+  sfx.thud(); cam.shake = 6; word('ПРИСТАВКА ВЫКЛ!', (c.l + c.r) / 2, c.t - 30, '#ffe14d', 26);
+  for (let i = 0; i < 10; i++) part({ x: (c.l + c.r) / 2, y: c.t, vx: rnd(-200, 200), vy: rnd(-260, -40), life: .6, max: .6, size: rnd(2, 4), kind: 'spark', color: '#bff3ff' });
+  return true;
 }
 function yashaHit(s) {
   const b = boss;
+  if (b && s.kind === 'kiss' && consoleHit(s)) return true;
+  if (b && s.kind === 'junk' && !['defeated', 'standup'].includes(b.state)) {
+    const bx2 = yashaBox();
+    if (s.x + s.r > bx2.l && s.x - s.r < bx2.r && s.y + s.r > bx2.t && s.y - s.r < bx2.b) {
+      b.f = Math.min(100, b.f + 3); b.flash = .1; b.say = pick(['Ой, это мои...', 'Ладно, уберу!', 'Понял, понял!']); b.sayT = 1.6;
+      word('ВОЗВРАТ!', s.x, s.y - 20, '#bff3ff', 22); if (b.f >= 100) startEnding3(); return true;
+    }
+    return false;
+  }
   if (!b || s.kind !== 'kiss' || b.state === 'defeated' || b.state === 'standup') return false;
   const bx = yashaBox();
   if (s.x + s.r > bx.l && s.x - s.r < bx.r && s.y + s.r > bx.t && s.y - s.r < bx.b) {
     if (b.lying) { word('ТСС!', s.x, s.y - 20, '#bff3ff', 22); return true; }
     const before = b.f;
-    b.f = Math.min(100, b.f + 1.4); b.flash = .08;
+    b.f = Math.min(100, b.f + (b.state === 'stunned' ? 2.8 : 1.4)); b.flash = .08;
+    if (b.state === 'stunned' && Math.random() < .4) word('x2', s.x, s.y - 30, '#ffe14d', 22);
     hearts(s.x, s.y, 1);
     for (const th of [30, 60, 85]) if (before < th && b.f >= th) items.push({ type: 'heart', x: ARENA_X + rnd(200, W - 200), y: GROUND - 70, ph: 0 });
     if (b.f >= 100) startEnding3();
@@ -999,7 +1036,8 @@ function updatePlayer(dt) {
   const p = P;
   let ax = 0;
   if (p.ctrl) { if (keys.KeyA || keys.ArrowLeft) ax -= 1; if (keys.KeyD || keys.ArrowRight) ax += 1; }
-  p.vx += (ax * 345 - p.vx) * Math.min(1, dt * (p.onGround ? 14 : 5));
+  p.slipT = (p.slipT || 0) - dt;
+  if (p.slipT > 0) p.vx *= Math.pow(.35, dt); else p.vx += (ax * 345 - p.vx) * Math.min(1, dt * (p.onGround ? 14 : 5));
   const jumpKey = pressed.Space || pressed.KeyW || pressed.ArrowUp;
   if (p.ctrl && jumpKey && (p.onGround || p.coyote > 0)) {
     p.vy = -900; p.onGround = false; p.coyote = 0; sfx.jump(); dust(p.x, p.y, 5);
@@ -1033,7 +1071,7 @@ function updatePlayer(dt) {
       if (mouse.wheel < 0) p.weapon = (p.weapon + 2) % 3;
     }
     if (level === 3) {
-      if (boss && boss.kind === 'yasha') { if ((mouse.down || keys.KeyJ) && p.cool <= 0) shootKiss(); }
+      if (boss && boss.kind === 'yasha') { if ((mouse.down || keys.KeyJ) && !p.sucking && p.cool <= 0) shootKiss(); else if (pressed.KeyE && p.cool <= 0) shootJunk(); }
       else if ((mouse.rclicked || pressed.KeyE) && p.cool <= 0) shootJunk();
     } else if ((mouse.down || keys.KeyJ) && p.cool <= 0) (level === 2 ? shootWine : shoot)();
     if ((mouse.rclicked || pressed.KeyE) && boss && boss.kind !== 'outlook' && boss.state !== 'tamed' && p.treatCool <= 0) throwTreat();
@@ -1044,7 +1082,7 @@ function muzzle() {
   const sp = dianaPose({ pose: P.pose, hurt: P.inv > 1.0, air: !P.onGround, vx: P.vx, ph: P.ph });
   if (sprOk(sp)) {
     const h = sp.h * SPRITE_K, w = h * sp.img.naturalWidth / sp.img.naturalHeight;
-    const ext = level === 3 && !(boss && boss.kind === 'yasha') ? 48 : 0;
+    const ext = level === 3 && (!(boss && boss.kind === 'yasha') || P.sucking) ? 48 : 0;
     return { x: P.x + P.facing * ((sp.mx - sp.ax) * w + ext), y: P.y - h * (1 - sp.my) + (sp.dy || 0) + (ext ? 6 : 0), dx: c * P.facing, dy: s };
   }
   const lx = DH_S1[0] + 50 * c + 41 * c + 9 * s, ly = DH_S1[1] + 50 * s + 41 * s - 9 * c;
@@ -1481,7 +1519,7 @@ function updFoes(dt) {
     if (f.ax) f.vx += f.ax * dt;
     if (f.kind === 'shirt') { f.t += dt; f.vy = Math.sin(f.t * 3) * 120; }
     if (f.kind === 'corep' || f.kind === 'towelp' || f.kind === 'sockp') f.rot = (f.rot || 0) + dt * (f.kind === 'towelp' ? 14 : 8);
-    if (f.groundDie && f.y > GROUND - 8) { f.dead = true; dust(f.x, GROUND, 3); }
+    if (f.groundDie && f.y > GROUND - 8) { f.dead = true; dust(f.x, GROUND, 3); if (f.kind === 'sockp' && ents.filter(e => e.type === 'floorsock').length < 7) ents.push(mk('floorsock', clamp(f.x, ARENA_X + 60, ARENA_X + W - 60), GROUND)); }
     if ((f.kind === 'invite' || f.kind === 'paper') && f.y > GROUND - 20) { f.dead = true; dust(f.x, GROUND, 4); sfx.thud(); }
     if ((f.kind === 'drop' || f.kind === 'slipper') && f.y > GROUND - 6) {
       f.dead = true;
@@ -3257,10 +3295,12 @@ function drawHomeProp(p) {
       if (!boss && sprOk(YSPR.lie)) { const sp = YSPR.lie, h = sp.gh, w = h * sp.img.naturalWidth / sp.img.naturalHeight; ctx.drawImage(sp.img, 1010 - w / 2, GROUND - h + 4, w, h); }
       // TV on the wall facing the sofa + console
       rr(1040, 190, 200, 120, 6); fs('#25222b', 4); rr(1050, 200, 180, 100, 3);
-      const playing = boss && (boss.state === 'sofa' || boss.lying);
+      const tvOn = !boss || !(boss.tvOff > 0);
+      const playing = boss && tvOn && boss.state !== 'defeated';
       ctx.fillStyle = playing ? '#3b6fb6' : '#1a1d24'; ctx.fill();
       if (playing) { ctx.fillStyle = '#ffe14d'; ctx.fillRect(1070 + (time * 60 % 120), 260, 14, 14); ctx.fillStyle = '#46cfc2'; ctx.fillRect(1060, 280, 160, 6); bodyText('ИГРА', 1140, 220, 12, '#fff', 'center', 900); }
-      rr(1060, 318, 160, 12, 3); fs('#8b5a3c', 3); rr(1105, 296, 70, 22, 4); fs('#f3f5f7', 3); ctx.fillStyle = '#46cfc2'; ctx.fillRect(1111, 306, 8, 3);
+      rr(1060, 318, 160, 12, 3); fs('#8b5a3c', 3); rr(1105, 296, 70, 22, 4); fs('#f3f5f7', 3); ctx.fillStyle = tvOn ? '#46cfc2' : '#d9343f'; ctx.fillRect(1111, 306, 8, 3);
+      if (boss && boss.kind === 'yasha' && tvOn && state === 'play') { const k = .5 + Math.sin(time * 6) * .5; ctx.strokeStyle = `rgba(255,225,77,${.4 + k * .6})`; ctx.lineWidth = 4; ctx.strokeRect(1098, 290, 84, 34); comicText('ВЫКЛ!', 1140, 276 - k * 4, 14, '#ffe14d', 0, 4); }
       // plant + floor lamp
       rr(30, GROUND - 60, 40, 60, 5); fs('#c86f3a', 3); ell(50, GROUND - 92, 36, 42); fs('#3f7a4f', 3);
       return true;
@@ -3313,6 +3353,8 @@ function drawHomeEnt(e) {
       strokeLines([[-14, -52, -4, -48], [14, -52, 4, -48]], INK, 2.4);
       ctx.restore(); break;
     }
+    case 'floorsock':
+      ctx.save(); ctx.translate(x, y - 4); ctx.rotate(Math.PI / 2 + e.rot); drawSockE(0, 14, 1, 0, '#ffe0f0', '#46cfc2'); ctx.restore(); break;
     case 'mosquito': {
       ctx.save(); ctx.translate(x, y); ctx.scale(e.facing, 1);
       const f = Math.sin(time * 70) * .6;
@@ -3361,7 +3403,7 @@ function drawKiss(s) {
   ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.ellipse(x - 5, s.y - 5, 3, 2, -.6, 0, 7); ctx.fill();
 }
 function drawVacuumOverlay(sp, w, h) {
-  if (boss && boss.kind === 'yasha') return;
+  if (boss && boss.kind === 'yasha' && !P.sucking) return;
   const mx = (sp.mx - sp.ax) * w, my = -h * (1 - sp.my) + 6;
   ctx.save(); ctx.translate(mx - 34, my);
   // motor body with a clear dust cup that fills up with ammo
@@ -3449,8 +3491,10 @@ function drawHUD() {
     bodyText('ЛКМ — всасывать · ПКМ/E — выстрел', 90, H - 50, 11, '#7a1a26', 'left', 700);
   }
   if (level === 3 && state === 'play' && boss && boss.kind === 'yasha') {
-    rr(30, H - 80, 230, 50, 12); fs('rgba(255,243,223,.9)', 3.5); heartPath(58, H - 56, 28); fs('#ff4f7f', 2.5);
-    bodyText('ЛКМ — воздушный поцелуй', 82, H - 55, 14, INK, 'left', 900);
+    const n = (P.ammo || []).length;
+    rr(30, H - 96, 330, 66, 12); fs('rgba(255,243,223,.9)', 3.5); heartPath(58, H - 64, 28); fs('#ff4f7f', 2.5);
+    bodyText('ЛКМ — поцелуй · ПКМ — пылесос', 82, H - 74, 14, INK, 'left', 900);
+    bodyText(`E — выстрел из пылесоса (${n}) · поцелуй приставку!`, 82, H - 50, 11, '#7a1a26', 'left', 700);
   }
   if (boss && boss.kind === 'yasha' && state !== 'bossintro') {
     const bw = 520, bx = W / 2 - bw / 2, by = 36, k = boss.f / 100;
@@ -3716,7 +3760,7 @@ function render() {
     const blink = P.inv > 0 && state === 'play' && Math.floor(time * 16) % 2 === 0;
     let gy = GROUND;
     for (const pl of platforms) if (P.x > pl.x - 8 && P.x < pl.x + pl.w + 8 && P.y <= pl.y + 1 && pl.y < gy) gy = pl.y;
-    if (!pairHug) drawDiana(P.x - cam.x, P.y, { facing: P.facing, ph: P.ph, air: !P.onGround && state === 'play', vx: P.vx, vy: P.vy, hurt: P.inv > 1.0 && state === 'play', aim: P.aim, pose: P.pose, shootAnim: P.shootAnim, blink, groundY: gy, happy: state === 'ending', lean: P.lean });
+    if (!pairHug) drawDiana(P.x - cam.x, P.y, { facing: P.facing, ph: P.ph, air: !P.onGround && state === 'play', vx: P.vx, vy: P.vy, hurt: P.inv > 1.0 && state === 'play', aim: P.aim, pose: P.pose, shootAnim: P.shootAnim, blink, groundY: gy, happy: state === 'ending', lean: P.slipT > 0 ? -.28 * Math.sign(P.vx || 1) * P.facing : P.lean });
     if (level === 2 && dianaSay.t > 0 && state === 'play') drawDianaSay();
     if (boss && rockyInArms && !pairHug) drawRocky(boss.x - cam.x + (boss.hugShift || 0) * boss.facing, boss.y, boss);
     for (const s of shots) s.kind === 'kiss' ? drawKiss(s) : s.kind === 'junk' ? drawJunkShot(s) : s.kind ? drawWineShot(s) : drawShot(s);
@@ -3755,7 +3799,7 @@ window.__gainulka = {
   get state() { return state; }, set state(v) { state = v; stateT = 0; },
   P, get boss() { return boss; }, get level() { return level; }, start(lv) { if (lv) level = lv; startGame(); },
   hit(v) { if (boss && boss.kind === 'yasha') { boss.f = Math.min(100, boss.f + v); if (boss.f >= 100) startEnding3(); return; } if (boss && boss.kind === 'outlook') { boss.hp = Math.max(0, boss.hp - v); if (boss.hp <= 0) startEnding2(); } else addFriend(v); }, warp(x) { P.x = x; cam.x = clamp(x - 400, 0, ARENA_X); },
-  friend(v) { addFriend(v); }, get foes() { return foes.length; },
+  friend(v) { addFriend(v); }, ents3() { return ents.filter(e => e.type === 'floorsock').length; }, get foes() { return foes.length; },
   closeup(sc, opts = {}) {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#e9e1d4'; ctx.fillRect(0, 0, W, H);
     ctx.save(); ctx.scale(sc, sc);
