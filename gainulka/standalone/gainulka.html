@@ -287,6 +287,7 @@ function mk(type, x, y, air) {
   if (type === 'dust') { e.hp = 1; e.harm = true; }
   if (type === 'cup') { e.hp = 3; e.shootT = 1.5; e.jig = 0; }
   if (type === 'laundry') { e.hp = 5; e.hopT = 1; e.harm = true; e.onGround = true; }
+  if (type === 'mosquito') { e.hp = 1; e.dive = rnd(1.5, 3); e.harm = true; }
   if (type === 'towel') { e.hp = 2; e.dive = rnd(1.5, 2.5); e.harm = true; }
   if (type === 'clock') { e.hp = 2; e.hopT = rnd(.4, 1.2); e.harm = true; e.onGround = true; e.ring = 0; }
   if (type === 'ticket') { e.st = 'fly'; e.dive = rnd(1, 2.5); e.harm = true; }
@@ -308,6 +309,7 @@ function entBox(e) {
     case 'cup': return { l: e.x - 20, r: e.x + 20, t: e.y - 46, b: e.y };
     case 'laundry': return { l: e.x - 46, r: e.x + 46, t: e.y - 70, b: e.y };
     case 'towel': return { l: e.x - 34, r: e.x + 34, t: e.y - 20, b: e.y + 20 };
+    case 'mosquito': return { l: e.x - 16, r: e.x + 16, t: e.y - 12, b: e.y + 12 };
     case 'ticket': return { l: e.x - 30, r: e.x + 30, t: e.y - 22, b: e.y + 22 };
     case 'colleague': return { l: e.x - 26, r: e.x + 26, t: e.y - 218, b: e.y - 10 };
     case 'printer': return { l: e.x - 46, r: e.x + 46, t: e.y - 100, b: e.y };
@@ -674,7 +676,7 @@ function buildLevel3() {
   ents.push(mk('core', 1950, GROUND));
   props.push({ t: 'table', x: 2100, w: 260 }); addPlat(2100, GROUND - 120, 260);
   ents.push(mk('cup', 2230, GROUND - 120)); ents.push(mk('crumb', 2160, GROUND)); ents.push(mk('crumb', 2300, GROUND));
-  ents.push(mk('dust', 2500, 360, true));
+  ents.push(mk('dust', 2500, 360, true)); ents.push(mk('mosquito', 1900, 330, true));
   props.push({ t: 'fridge', x: 2650 }); addPlat(2650, GROUND - 260, 120);
   ents.push(mk('core', 2850, GROUND)); ents.push(mk('sock', 2950, GROUND));
   // ванная
@@ -683,12 +685,12 @@ function buildLevel3() {
   ents.push(mk('laundry', 3420, GROUND));
   ents.push(mk('towel', 3600, 330, true));
   props.push({ t: 'bath', x: 3750, w: 380 }); addPlat(3750, GROUND - 100, 380);
-  ents.push(mk('dust', 3900, 330, true)); ents.push(mk('sock', 4200, GROUND)); ents.push(mk('towel', 4300, 300, true));
+  ents.push(mk('dust', 3900, 330, true)); ents.push(mk('mosquito', 3500, 300, true)); ents.push(mk('sock', 4200, GROUND)); ents.push(mk('towel', 4300, 300, true));
   // гостиная
   ents.push(mk('laundry', 4700, GROUND));
   props.push({ t: 'bookcase', x: 4880, w: 160, h: 180 }); addPlat(4880, GROUND - 180, 160);
   ents.push(mk('cup', 5150, GROUND)); ents.push(mk('core', 5300, GROUND)); ents.push(mk('crumb', 5420, GROUND));
-  ents.push(mk('sock', 5550, GROUND)); ents.push(mk('sock', 5650, GROUND)); ents.push(mk('dust', 5700, 340, true));
+  ents.push(mk('sock', 5550, GROUND)); ents.push(mk('sock', 5650, GROUND)); ents.push(mk('mosquito', 4600, 320, true)); ents.push(mk('mosquito', 5200, 300, true)); ents.push(mk('dust', 5700, 340, true));
   props.push({ t: 'gate3', x: 5760 });
   props.push({ t: 'arena3', x: ARENA_X });
 
@@ -701,7 +703,7 @@ function buildLevel3() {
   items.push({ type: 'heart', x: 3980, y: 430, ph: 1 });
   items.push({ type: 'heart', x: 5400, y: 530, ph: 2 });
 }
-const SUCKABLE = { sock: 1, crumb: 1, core: 1, dust: 1 };
+const SUCKABLE = { sock: 1, crumb: 1, core: 1, dust: 1, mosquito: 1 };
 
 function updHomeEnt(e, dt, dx, adx) {
   switch (e.type) {
@@ -744,6 +746,22 @@ function updHomeEnt(e, dt, dx, adx) {
       e.hopT -= dt; e.facing = dx > 0 ? 1 : -1;
       if (e.onGround && e.hopT <= 0 && adx < 600) { e.vy = -420; e.vx = Math.sign(dx) * 130; e.hopT = rnd(1.6, 2.2); e.onGround = false; sfx.thud(); }
       return true;
+    case 'mosquito': {
+      // jittery flight around her head, a quick bite dive now and then
+      e.dive -= dt; e.buzz = (e.buzz || 0) - dt;
+      if (e.buzz <= 0 && adx < 500) { e.buzz = .5; audio.tone(rnd(560, 640), .45, 'sawtooth', .015, 30); }
+      if (e.diving) {
+        e.dvt += dt; const ddx = e.tx - e.x, ddy = e.ty - e.y, d = Math.hypot(ddx, ddy) || 1;
+        e.vx = ddx / d * 330; e.vy = ddy / d * 330;
+        if (d < 16 || e.dvt > 1) { e.diving = false; e.dive = rnd(2.2, 3.4); e.vy = -200; }
+      } else {
+        const tx = P.x + Math.sin(e.t * 1.7 + e.seed) * 140, ty = P.y - 260 + Math.sin(e.t * 4.3 + e.seed) * 50;
+        e.vx += ((tx - e.x) * 2 - e.vx) * dt * 3 + rnd(-900, 900) * dt; e.vy += ((ty - e.y) * 2 - e.vy) * dt * 3 + rnd(-900, 900) * dt;
+        if (e.dive <= 0 && adx < 300) { e.diving = true; e.dvt = 0; e.tx = P.x; e.ty = P.y - 200; word('ПИИИ!', e.x, e.y - 20, '#ffe14d', 16); }
+      }
+      e.x += e.vx * dt; e.y += e.vy * dt; e.y = Math.min(e.y, GROUND - 30); e.facing = e.vx > 0 ? 1 : -1;
+      return true;
+    }
     case 'towel':
       e.dive -= dt;
       if (e.diving) {
@@ -3295,6 +3313,16 @@ function drawHomeEnt(e) {
       strokeLines([[-14, -52, -4, -48], [14, -52, 4, -48]], INK, 2.4);
       ctx.restore(); break;
     }
+    case 'mosquito': {
+      ctx.save(); ctx.translate(x, y); ctx.scale(e.facing, 1);
+      const f = Math.sin(time * 70) * .6;
+      for (const [lx, ly] of [[-4, 6], [0, 7], [4, 6]]) { ctx.beginPath(); ctx.moveTo(lx, 2); ctx.lineTo(lx - 4, ly + 6); ink(1.4); ctx.stroke(); }
+      ctx.save(); ctx.rotate(-.6 + f); ell(-2, -8, 10, 4); ctx.fillStyle = 'rgba(210,235,255,.75)'; ctx.fill(); ink(1.4); ctx.stroke(); ctx.restore();
+      ell(-6, 0, 9, 4.5, .2); fs('#5d4a3a', 2); ell(5, -1, 5, 4.5); fs('#3d2f26', 2);
+      ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(20, 3); ink(1.6); ctx.stroke();
+      ell(7, -2.5, 2, 2); ctx.fillStyle = '#d9343f'; ctx.fill();
+      ctx.restore(); break;
+    }
     case 'towel':
       ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(e.t * 5) * .15);
       ctx.beginPath(); ctx.moveTo(-34, -14); ctx.quadraticCurveTo(0, -24 + Math.sin(e.t * 9) * 6, 34, -14); ctx.lineTo(30, 18); ctx.quadraticCurveTo(0, 10 + Math.sin(e.t * 9 + 1) * 6, -30, 18); ctx.closePath(); fs('#7fc4e0', 3);
@@ -3515,7 +3543,7 @@ function drawStory() {
   const lines = level === 3 ? [
     'Диана наконец дома. Но дома... бардак.',
     'Носки, крошки, огрызки, немытые чашки,',
-    'мокрое полотенце — и всё это живое.',
+    'мокрое полотенце, комары — и всё это живое.',
     '',
     'Задача: навести порядок до самой гостиной.',
     'В руках у Дианы — пылесос.',
