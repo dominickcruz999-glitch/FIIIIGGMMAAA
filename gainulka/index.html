@@ -131,6 +131,7 @@ const TBTN = {
   alt2: { x: 1190, y: 445, r: 46, icon: '' },
 };
 const touchHeld = {}, touchIds = new Map();
+let touchAimPt = null;
 function touchButtons() {
   // which on-screen buttons exist right now (the set depends on the level and the fight)
   const b = { left: 1, right: 1, jump: 1, fire: 1 };
@@ -153,15 +154,16 @@ function onTouch(e) {
     const [x, y] = touchPoint(t);
     if (e.type === 'touchstart') {
       const k = playing ? btnAt(x, y) : null;
-      touchIds.set(t.identifier, k);
-      if (k) onBtnDown(k); else { mouse.x = x; mouse.y = y; mouse.clicked = true; }
+      touchIds.set(t.identifier, k || (playing ? 'aim' : null));
+      if (k) onBtnDown(k); else { mouse.x = x; mouse.y = y; if (playing) touchAimPt = [x, y]; else mouse.clicked = true; }
     } else if (e.type === 'touchmove') {
       const old = touchIds.get(t.identifier);
       if (old === 'left' || old === 'right') { const k = btnAt(x, y); if (k === 'left' || k === 'right') touchIds.set(t.identifier, k); }
-    } else { touchIds.delete(t.identifier); }
+      if (old === 'aim') touchAimPt = [x, y];
+    } else { if (touchIds.get(t.identifier) === 'aim') touchAimPt = null; touchIds.delete(t.identifier); }
   }
   for (const k in touchHeld) touchHeld[k] = false;
-  for (const k of touchIds.values()) if (k) touchHeld[k] = true;
+  for (const k of touchIds.values()) if (k && k !== 'aim') touchHeld[k] = true;
   keys.KeyA = !!touchHeld.left; keys.KeyD = !!touchHeld.right; keys.Space = !!touchHeld.jump;
   applyHolds();
 }
@@ -186,6 +188,13 @@ if (TOUCH) {
 // auto-aim: point the "mouse" at the nearest target in front of Diana
 function touchAim() {
   if (touchHeld.left) P.tFacing = -1; else if (touchHeld.right) P.tFacing = 1;
+  if (touchAimPt) { mouse.x = touchAimPt[0]; mouse.y = touchAimPt[1]; P.tFacing = mouse.x >= P.x - cam.x ? 1 : -1; return; }
+  if (level === 3 && P.sucking) {
+    // vacuum: steer to the nearest thing it can swallow, wherever it is in front
+    const f0 = P.tFacing || 1; let bt = null, bd2 = 520;
+    for (const e of ents) { if (e.dead || !SUCKABLE[e.type]) continue; const b = entBox(e); if (!b) continue; const cx = (b.l + b.r) / 2, cy = (b.t + b.b) / 2; if ((cx - P.x) * f0 < 10) continue; const d = Math.hypot(cx - P.x, cy - P.y + 150); if (d < bd2) { bd2 = d; bt = [cx, cy]; } }
+    if (bt) { mouse.x = bt[0] - cam.x; mouse.y = bt[1]; return; }
+  }
   const f = P.tFacing || 1, hx = P.x, hy = P.y - 170;
   let best = null, bd = 760;
   const consider = (x, y) => { const dx = (x - hx) * f; if (dx < 20) return; const d = Math.hypot(x - hx, y - hy); if (d < bd) { bd = d; best = [x, y]; } };
@@ -201,6 +210,7 @@ function touchAim() {
 }
 function drawTouchUI() {
   if (!TOUCH || state !== 'play') return;
+  if (touchAimPt) { const [ax, ay] = touchAimPt; ctx.beginPath(); ctx.arc(ax, ay, 16, 0, 7); ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = '#ff7fb2'; ctx.lineWidth = 3; ctx.stroke(); }
   const on = touchButtons(), fight3 = level === 3 && boss && boss.kind === 'yasha';
   const label = {
     fire: level === 1 ? 'пузыри' : level === 2 ? 'вино' : fight3 ? 'поцелуй' : 'пылесос',
