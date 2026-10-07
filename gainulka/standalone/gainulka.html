@@ -826,6 +826,7 @@ function buildLevel3() {
 const SUCKABLE = { sock: 1, crumb: 1, core: 1, dust: 1, mosquito: 1, floorsock: 1 };
 
 function updHomeEnt(e, dt, dx, adx) {
+  if (e.suckT > 0) { e.suckT -= dt; return true; }
   switch (e.type) {
     case 'sock':
       e.vy += G * dt; e.x += e.vx * dt; e.y += e.vy * dt;
@@ -924,17 +925,19 @@ function updVacuum(dt) {
   if (!P.sucking) { P.suckSnd = 0; return; }
   const m = muzzle(), dir = Math.atan2(m.dy, m.dx);
   P.suckSnd -= dt; if (P.suckSnd <= 0) { P.suckSnd = .18; audio.noise(.2, .05, 900); }
-  const inCone = (x, y, range) => { const dx = x - m.x, dy = y - m.y, d = Math.hypot(dx, dy); if (d > range) return 0; let a = Math.atan2(dy, dx) - dir; a = Math.atan2(Math.sin(a), Math.cos(a)); return Math.abs(a) < .5 ? d || .1 : 0; };
+  const inCone = (x, y, range) => { const dx = x - m.x, dy = y - m.y, d = Math.hypot(dx, dy); if (d > range) return 0; let a = Math.atan2(dy, dx) - dir; a = Math.atan2(Math.sin(a), Math.cos(a)); return Math.abs(a) < (TOUCH ? .7 : .55) ? d || .1 : 0; };
   for (const e of ents) {
     if (e.dead) continue;
     const b = entBox(e); if (!b) continue;
-    const cx = (b.l + b.r) / 2, cy = (b.t + b.b) / 2, d = inCone(cx, cy, 300);
+    const cx = (b.l + b.r) / 2, cy = (b.t + b.b) / 2, d = inCone(cx, cy, TOUCH ? 360 : 320);
     if (!d) continue;
     if (SUCKABLE[e.type]) {
-      const k = Math.min(1, dt * (5 + 600 / d));
-      e.x += (m.x - cx) * k; e.y += (m.y - cy) * k * .8; e.vx = 0;
+      // caught in the stream: the item stops doing its own thing and flies into the nozzle
+      e.suckT = .12; e.vx = 0; e.vy = 0;
+      const k = Math.min(1, dt * (7 + 900 / d));
+      e.x += (m.x - cx) * k; e.y += (m.y - cy) * k;
       if (e.type === 'sock' || e.type === 'core') e.vy = Math.min(e.vy, 0);
-      if (d < 46) {
+      if (d < 60) {
         e.dead = true; P.ammo.push(e.type); if (P.ammo.length > 12) P.ammo.shift();
         sfx.collect(); word('+1', m.x, m.y - 30, '#fff3a8', 18); popFx(m.x, m.y, 4);
       }
@@ -1298,7 +1301,7 @@ function updEnt(e, dt) {
       break;
     default: updOfficeEnt(e, dt, dx, adx) || updHomeEnt(e, dt, dx, adx);
   }
-  if (e.harm && !e.trapped && state === 'play') { const b = entBox(e); if (b && overlap(b, pBox())) hurtPlayer(e.x); }
+  if (e.harm && !e.trapped && !(e.suckT > 0) && state === 'play') { const b = entBox(e); if (b && overlap(b, pBox())) hurtPlayer(e.x); }
 }
 // Tatar: «Ты дочь Раифа?», «Ты дочь Альфии?», «Как выросла!», «Я тебя маленькой помню», «Вы в общежитии жили?», «Сколько тебе лет?»
 const PHRASES = ['Син Раиф кызымы?', 'Син Әлфия кызымы?', 'Ничек үскәнсең!', 'Кечкенә чагыңны хәтерлим!', 'Сез тулай торакта яшәдегезме?', 'Сиңа ничә яшь?'];
