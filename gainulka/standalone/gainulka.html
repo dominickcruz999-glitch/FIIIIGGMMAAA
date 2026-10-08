@@ -2501,7 +2501,6 @@ function drawRocky(x, y, o) {
   ctx.translate(0, bob - (o.hop || 0));
   if (o.lean) ctx.rotate(o.lean);
   if (o.state === 'shake') { const k = Math.sin(time * 55) * Math.min(1, o.st * 3); ctx.rotate(k * .09); ctx.scale(1 + Math.abs(k) * .05, 1 - Math.abs(k) * .04); }
-  if (o.eating && sp !== RSPR.eat) { ctx.translate(-w * .3, 0); ctx.rotate(.2 + Math.sin(time * 14) * .04); ctx.translate(w * .3, 0); }
   ctx.scale(1, cr * breath);
   ctx.drawImage(sp.img, -sp.ax * w, -h, w, h);
   if (o.holding) drawBall((1 - sp.ax) * w * .86, -h * .55, 0);
