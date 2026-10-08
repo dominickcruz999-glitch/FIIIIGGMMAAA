@@ -568,6 +568,7 @@ function updDianaSay(dt) {
     sfx.collect();
   }
 }
+function dianaShout(text) { dianaSay.text = text; dianaSay.t = 2.8; dianaSay.next = Math.max(dianaSay.next, 4); sfx.collect(); }
 function drawDianaSay() {
   const k = 2.8 - dianaSay.t, pop = k < .18 ? .4 + k / .18 * .7 : k < .3 ? 1.1 - (k - .18) / .12 * .1 : 1;
   const fade = Math.min(1, dianaSay.t / .3);
@@ -772,9 +773,10 @@ const ROOMS = [
   { x0: 3050, x1: 4450, name: 'ванная', wall: '#cfe6ee', pat: 'tile', patc: 'rgba(60,110,140,.22)' },
   { x0: 4450, x1: 9000, name: 'гостиная', wall: '#f0d6c4', pat: 'dots', patc: 'rgba(170,90,80,.16)' },
 ];
-const YASHA_SAY = ['Я потом уберу!', 'Это не мои носки!', 'Ещё одну катку!', 'Я помою, честно!', 'Оно само упало!', 'Где мой геймпад?'];
+const YASHA_SAY = ['Я потом уберу!', 'Это не мои носки!', 'Ещё одну катку!', 'Я помою, честно!', 'Оно само упало!', 'Было дерево как?', "I'd like to say I am not a violent man", 'Обама — обезьяна', 'Должен будешь', 'Хайййййй'];
 
 function buildLevel3() {
+  dianaSay.t = 0; dianaSay.next = 999;
   ents = []; shots = []; foes = []; items = []; parts = []; treats = []; props = []; platforms = [];
   boss = null; cam.lock = false; daisies = 0; bubbles = 0; runTime = 0; P.ammo = [];
 
@@ -991,6 +993,7 @@ function updYasha(dt) {
   switch (b.state) {
     case 'sofa':
       b.sit = 1; b.facing = -1; b.pad = true;
+      if (state === 'bossintro' && stateT > .6 && !b.shouted) { b.shouted = true; dianaShout('Вставай, вставай немедленно!'); }
       if (state === 'bossintro' && stateT > 1.7) ySet('standup');
       break;
     case 'standup':
@@ -1009,10 +1012,11 @@ function updYasha(dt) {
     case 'idle': {
       face(); b.vx *= Math.pow(.05, dt);
       if (b.st < .5) b.vx = 0; else if (Math.abs(dx) < 260) b.vx = -Math.sign(dx) * 120; else if (Math.abs(dx) > 600) b.vx = Math.sign(dx) * 110;
-      if (b.st > (ph === 3 ? 1.1 : ph === 2 ? 1.35 : 1.6)) {
-        const pool = ['socks', 'core'];
-        if (ph >= 2) pool.push('shirt', 'towel', 'crumbs');
-        if (ph >= 3 && !b.usedUlt) pool.push('ult', 'ult');
+      if (b.st > (ph === 3 ? .6 : ph === 2 ? .8 : 1)) {
+        const pool = ['socks', 'core', 'towel'];
+        if (ph >= 2) pool.push('shirt', 'crumbs', 'socks');
+        if (ph >= 2 && !b.usedUlt) pool.push('ult');
+        if (ph >= 3 && !b.usedUlt) pool.push('ult');
         let a; do { a = pick(pool); } while (a === b.last && pool.length > 1);
         if (a !== 'ult') b.usedUlt = false;
         b.last = a; b.vx = 0; ySet(a);
@@ -1020,20 +1024,20 @@ function updYasha(dt) {
       break;
     }
     case 'socks': {
-      face(); const n = ph === 1 ? 2 : 3;
-      for (let k = 0; k < n; k++) if (!b['v' + (k + 1)] && b.st > .25 + k * .35) {
+      face(); const n = ph === 1 ? 3 : ph === 2 ? 4 : 5;
+      for (let k = 0; k < n; k++) if (!b['v' + (k + 1)] && b.st > .2 + k * .28) {
         b['v' + (k + 1)] = 1; b.arms = 1; sfx.treat();
         const sx = b.x + b.facing * 30, sy = b.y - 200, T = rnd(.8, 1.05), tx = P.x + P.vx * .25 + rnd(-60, 60), ty = P.y - 110;
         foes.push({ kind: 'sockp', x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy - .5 * G * .7 * T * T) / T, w: 34, h: 26, grav: .7, life: 3, pop: true, boss: true, rot: 0, groundDie: true });
       }
       b.arms = Math.max(0, b.arms - dt * 3);
-      if (b.st > .5 + n * .35) ySet('idle');
+      if (b.st > .4 + n * .28) ySet('idle');
       break;
     }
     case 'core':
       face();
       if (!b.v1 && b.st > .3) { b.v1 = 1; b.arms = 1; sfx.thud(); foes.push({ kind: 'corep', x: b.x + b.facing * 30, y: GROUND - 14, vx: b.facing * 300, vy: 0, w: 26, h: 28, life: 4.5, pop: true, boss: true, rot: 0 }); }
-      if (ph >= 2 && !b.v2 && b.st > .8) { b.v2 = 1; foes.push({ kind: 'corep', x: b.x + b.facing * 30, y: GROUND - 14, vx: b.facing * 380, vy: 0, w: 26, h: 28, life: 4.5, pop: true, boss: true, rot: 0 }); }
+      if (!b.v2 && b.st > .7) { b.v2 = 1; foes.push({ kind: 'corep', x: b.x + b.facing * 30, y: GROUND - 14, vx: b.facing * (ph >= 2 ? 460 : 380), vy: 0, w: 26, h: 28, life: 4.5, pop: true, boss: true, rot: 0 }); }
       b.arms = Math.max(0, b.arms - dt * 3);
       if (b.st > 1.2) ySet('idle');
       break;
@@ -1051,7 +1055,7 @@ function updYasha(dt) {
       break;
     case 'crumbs':
       face();
-      if (!b.v1 && b.st > .3) { b.v1 = 1; b.arms = 1; word('КРОШКИ!', b.x, b.y - 270, '#f2c27a', 22); for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + b.facing * rnd(.2, 1.1); const s = rnd(380, 560); foes.push({ kind: 'crumbp', x: b.x + b.facing * 20, y: b.y - 170, vx: Math.cos(a) * s, vy: Math.sin(a) * s, w: 14, h: 14, grav: .9, life: 3, pop: true, boss: true, groundDie: true }); } }
+      if (!b.v1 && b.st > .3) { b.v1 = 1; b.arms = 1; word('КРОШКИ!', b.x, b.y - 270, '#f2c27a', 22); for (let i = 0; i < 9; i++) { const a = -Math.PI / 2 + b.facing * rnd(.2, 1.1); const s = rnd(380, 560); foes.push({ kind: 'crumbp', x: b.x + b.facing * 20, y: b.y - 170, vx: Math.cos(a) * s, vy: Math.sin(a) * s, w: 14, h: 14, grav: .9, life: 3, pop: true, boss: true, groundDie: true }); } }
       b.arms = Math.max(0, b.arms - dt * 3);
       if (b.st > 1) ySet('idle');
       break;
@@ -1059,7 +1063,7 @@ function updYasha(dt) {
       // walks to the sofa, lies down with the gamepad — kisses don't work for a while
       const tx = SOFA_X(), d = tx - b.x;
       if (!b.lying && Math.abs(d) > 8) { b.vx = Math.sign(d) * 260; b.facing = Math.sign(d) || -1; break; }
-      if (!b.lying) { b.lying = true; b.ltime = 0; b.lph = 0; b.pad = true; b.say = 'Не мешай, я играю!'; b.sayT = 2.5; sfx.thud(); }
+      if (!b.lying) { b.lying = true; b.ltime = 0; b.lph = 0; b.pad = true; b.say = 'Не мешай, я играю!'; b.sayT = 2.5; sfx.thud(); setTimeout(() => { if (boss && boss.lying) dianaShout('Вставай, вставай немедленно!'); }, 900); }
       b.vx = 0; b.ltime += dt; b.lie = Math.min(1, b.lie + dt * 4); b.facing = -1;
       if (Math.floor(b.ltime / 1.1) > b.lph) { b.lph = Math.floor(b.ltime / 1.1); officePhrase({ x: b.x - 70, facing: -1, boss: true }, pick(['Ещё одну катку!', 'Сейчас, доиграю!', 'Пять минут!', 'Тут сейв далеко!']), b.y - 120); }
       if (b.ltime > 3.6) { b.lie = 0; b.lying = false; b.pad = false; b.usedUlt = true; ySet('idle'); b.vy = -320; }
@@ -1073,7 +1077,7 @@ function consoleHit(s) {
   const b = boss, c = CONSOLE();
   if (!b || b.state === 'defeated' || b.state === 'standup' || b.tvOff > 0) return false;
   if (!(s.x + s.r > c.l && s.x - s.r < c.r && s.y + s.r > c.t && s.y - s.r < c.b)) return false;
-  b.tvOff = 10; b.stun = 3; b.lie = 0; b.lying = false; b.pad = false; b.vx = 0; ySet('stunned');
+  b.tvOff = 14; b.stun = 2.2; b.lie = 0; b.lying = false; b.pad = false; b.vx = 0; ySet('stunned');
   b.say = pick(['Я же не сохранился!', 'НЕЕЕТ! Мой сейв!', 'Кто выключил?!']); b.sayT = 2.6;
   sfx.thud(); cam.shake = 6; word('ПРИСТАВКА ВЫКЛ!', (c.l + c.r) / 2, c.t - 30, '#ffe14d', 26);
   for (let i = 0; i < 10; i++) part({ x: (c.l + c.r) / 2, y: c.t, vx: rnd(-200, 200), vy: rnd(-260, -40), life: .6, max: .6, size: rnd(2, 4), kind: 'spark', color: '#bff3ff' });
@@ -1085,7 +1089,7 @@ function yashaHit(s) {
   if (b && s.kind === 'junk' && !['defeated', 'standup'].includes(b.state)) {
     const bx2 = yashaBox();
     if (s.x + s.r > bx2.l && s.x - s.r < bx2.r && s.y + s.r > bx2.t && s.y - s.r < bx2.b) {
-      b.f = Math.min(100, b.f + 3); b.flash = .1; b.say = pick(['Ой, это мои...', 'Ладно, уберу!', 'Понял, понял!']); b.sayT = 1.6;
+      b.f = Math.min(100, b.f + 2); b.flash = .1; b.say = pick(['Ой, это мои...', 'Ладно, уберу!', 'Понял, понял!']); b.sayT = 1.6;
       word('ВОЗВРАТ!', s.x, s.y - 20, '#bff3ff', 22); if (b.f >= 100) startEnding3(); return true;
     }
     return false;
@@ -1095,7 +1099,7 @@ function yashaHit(s) {
   if (s.x + s.r > bx.l && s.x - s.r < bx.r && s.y + s.r > bx.t && s.y - s.r < bx.b) {
     if (b.lying) { word('ТСС!', s.x, s.y - 20, '#bff3ff', 22); return true; }
     const before = b.f;
-    b.f = Math.min(100, b.f + (b.state === 'stunned' ? 2.8 : 1.4)); b.flash = .08; if ((b.hitT || 0) < -1.2) b.hitT = .45;
+    b.f = Math.min(100, b.f + (b.state === 'stunned' ? 1.8 : .85)); b.flash = .08; if ((b.hitT || 0) < -1.2) b.hitT = .45;
     if (b.state === 'stunned' && Math.random() < .4) word('x2', s.x, s.y - 30, '#ffe14d', 22);
     hearts(s.x, s.y, 1);
     for (const th of [30, 60, 85]) if (before < th && b.f >= th) items.push({ type: 'heart', x: ARENA_X + rnd(200, W - 200), y: GROUND - 70, ph: 0 });
@@ -1192,7 +1196,7 @@ function updatePlayer(dt) {
       if (boss && boss.kind === 'yasha') { if ((mouse.down || keys.KeyJ) && !p.sucking && p.cool <= 0) shootKiss(); else if (pressed.KeyE && p.cool <= 0) shootJunk(); }
       else if ((mouse.rclicked || pressed.KeyE) && p.cool <= 0) shootJunk();
     } else if ((mouse.down || keys.KeyJ) && p.cool <= 0) (level === 2 ? shootWine : shoot)();
-    if ((mouse.rclicked || pressed.KeyE) && boss && boss.kind !== 'outlook' && boss.state !== 'tamed' && p.treatCool <= 0) throwTreat();
+    if ((mouse.rclicked || pressed.KeyE) && boss && boss.kind === 'rocky' && boss.state !== 'tamed' && p.treatCool <= 0) throwTreat();
   }
 }
 function muzzle() {
@@ -1552,7 +1556,7 @@ function update(dt) {
       return;
     case 'bossintro':
       updParts(dt); updCam(dt);
-      if (level === 3 && boss) updYasha(dt);
+      if (level === 3 && boss) { updYasha(dt); dianaSay.t -= dt; }
       if (level === 3 ? (stateT > 5.4 || (stateT > 3.4 && anyStart())) : (stateT > 3 || (stateT > .8 && anyStart()))) { state = 'play'; stateT = 0; music.play('boss'); }
       return;
   }
@@ -1560,7 +1564,7 @@ function update(dt) {
     runTime += dt;
     if (pressed.KeyP || pressed.Escape) { state = 'paused'; return; }
     updatePlayer(dt);
-    if (level === 2) updDianaSay(dt);
+    if (level === 2) updDianaSay(dt); else { dianaSay.t -= dt; }
     if (level === 3) updVacuum(dt);
     if (P.x > LEVELS[level].cp && checkpoint < LEVELS[level].cp) { checkpoint = LEVELS[level].cpX; word('ЧЕКПОИНТ', P.x, P.y - 270, '#bff3ff', 26); }
     if (!cam.lock && P.x > ARENA_X + 330) {
@@ -2129,10 +2133,10 @@ function dianaGrip(aim, kick = 0) {
   return [DH_S1[0] + c * (50 + kick), DH_S1[1] + s * (50 + kick)];
 }
 // level 2 walk: legs from the walk frame, upper body (holding the bottle) from the standing frame, joined at the belt
-const BELT = { vacStand: [.403, .178], kissStand: [.411, .34], standBottle: [.419, .266], walkA: [.431, .424], walkB: [.425, .369] }; // [belt y from top, waist centre x]
+const BELT = { jumpBody: [.44, .4455], vacStand: [.403, .178], kissStand: [.411, .34], standBottle: [.419, .266], walkA: [.431, .424], walkB: [.425, .369] }; // [belt y from top, waist centre x]
 const COMP = {};
 function walkWithBottle(leg, upKey = 'standBottle') {
-  const key = leg === DSPR.walkA ? 'walkA' : 'walkB', ck = key + upKey;
+  const key = leg === DSPR.walkA ? 'walkA' : leg === DSPR.jumpBody ? 'jumpBody' : 'walkB', ck = key + upKey;
   if (!COMP[ck]) {
     const up = DSPR[upKey], K = SPRITE_K;
     const beltUp = -(1 - BELT[upKey][0]) * up.h * K, beltLeg = -(1 - BELT[key][0]) * leg.h * K;
@@ -2143,7 +2147,6 @@ function walkWithBottle(leg, upKey = 'standBottle') {
 function dianaPose(o) {
   if (o.pose === 'hug') return DSPR.hug || DSPR.stand;
   if (o.hurt) return DSPR.hurt;
-  if (o.air) return level === 2 && sprOk(DSPR.jumpBottle) ? DSPR.jumpBottle : DSPR.jumpBody;
   // level 3: the vacuum or the air kiss decides the upper body
   let up3 = null;
   if (level === 3 && o.pose !== 'hug' && o.vac !== false) {
@@ -2151,6 +2154,11 @@ function dianaPose(o) {
     if (fight && P.kissT > 0 && !P.sucking) up3 = 'kissStand';
     else if (!fight || P.sucking) up3 = 'vacStand';
     if (up3 && !sprOk(DSPR[up3])) up3 = null;
+  }
+  if (o.air) {
+    if (level === 2 && sprOk(DSPR.jumpBottle)) return DSPR.jumpBottle;
+    if (up3) return walkWithBottle(DSPR.jumpBody, up3);
+    return DSPR.jumpBody;
   }
   if (!o.air && Math.abs(o.vx) > 30) {
     const leg = Math.floor(o.ph / (Math.PI / 2)) % 2 ? DSPR.walkB : DSPR.walkA;
@@ -2197,7 +2205,7 @@ function drawDiana(x, y, o) {
     }
   }
   if (level === 2 && sp !== DSPR.hug && (!sp.bottle || (P.weapon || 0) > 0)) drawBottleOverlay(sp, w, h);
-  if (level === 3 && sp !== DSPR.hug && o.vac !== false && !sp.vac && !sp.kiss) drawVacuumOverlay(sp, w, h);
+  if (level === 3 && sp !== DSPR.hug && sp !== DSPR.hurt && o.vac !== false && !sp.vac && !sp.kiss) drawVacuumOverlay(sp, w, h);
   ctx.restore();
 }
 function drawDianaVector(x, y, o) {
@@ -3945,7 +3953,7 @@ function render() {
     const carry = level === 3 && state === 'ending' && boss && boss.carryT >= 0 && sprOk(CARRY);
     if (carry) drawCarry();
     if (!pairHug && !carry) drawDiana(P.x - cam.x, P.y, { facing: P.facing, ph: P.ph, air: !P.onGround && state === 'play', vx: P.vx, vy: P.vy, hurt: P.inv > 1.0 && state === 'play', aim: P.aim, pose: P.pose, shootAnim: P.shootAnim, blink, groundY: gy, happy: state === 'ending', lean: P.slipT > 0 ? -.28 * Math.sign(P.vx || 1) * P.facing : P.lean });
-    if (level === 2 && dianaSay.t > 0 && state === 'play') drawDianaSay();
+    if (dianaSay.t > 0 && (level === 2 || level === 3) && (state === 'play' || state === 'bossintro')) drawDianaSay();
     if (boss && rockyInArms && !pairHug) drawRocky(boss.x - cam.x + (boss.hugShift || 0) * boss.facing, boss.y, boss);
     for (const s of shots) s.kind === 'kiss' ? drawKiss(s) : s.kind === 'junk' ? drawJunkShot(s) : s.kind ? drawWineShot(s) : drawShot(s);
     for (const f of foes) drawFoe(f);
