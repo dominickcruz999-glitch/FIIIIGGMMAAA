@@ -773,7 +773,7 @@ const ROOMS = [
   { x0: 3050, x1: 4450, name: 'ванная', wall: '#cfe6ee', pat: 'tile', patc: 'rgba(60,110,140,.22)' },
   { x0: 4450, x1: 9000, name: 'гостиная', wall: '#f0d6c4', pat: 'dots', patc: 'rgba(170,90,80,.16)' },
 ];
-const YASHA_SAY = ['Я потом уберу!', 'Это не мои носки!', 'Ещё одну катку!', 'Я помою, честно!', 'Оно само упало!', 'Было дерево как?', "I'd like to say I am not a violent man", 'Обама — обезьяна', 'Должен будешь', 'Хайййййй'];
+const YASHA_SAY = ['Я потом уберу!', 'Это не мои носки!', 'Оно само упало!', 'Было дерево как?', "I'd like to say I am not a violent man", 'Обама — обезьяна', 'Должен будешь', 'Хайййййй'];
 
 function buildLevel3() {
   dianaSay.t = 0; dianaSay.next = 999;
@@ -1065,7 +1065,7 @@ function updYasha(dt) {
       if (!b.lying && Math.abs(d) > 8) { b.vx = Math.sign(d) * 260; b.facing = Math.sign(d) || -1; break; }
       if (!b.lying) { b.lying = true; b.ltime = 0; b.lph = 0; b.pad = true; b.say = 'Не мешай, я играю!'; b.sayT = 2.5; sfx.thud(); setTimeout(() => { if (boss && boss.lying) dianaShout('Вставай, вставай немедленно!'); }, 900); }
       b.vx = 0; b.ltime += dt; b.lie = Math.min(1, b.lie + dt * 4); b.facing = -1;
-      if (Math.floor(b.ltime / 1.1) > b.lph) { b.lph = Math.floor(b.ltime / 1.1); officePhrase({ x: b.x - 70, facing: -1, boss: true }, pick(['Ещё одну катку!', 'Сейчас, доиграю!', 'Пять минут!', 'Тут сейв далеко!']), b.y - 120); }
+      if (Math.floor(b.ltime / 1.1) > b.lph) { b.lph = Math.floor(b.ltime / 1.1); officePhrase({ x: b.x - 70, facing: -1, boss: true }, pick(['Сейчас, доиграю!', 'Пять минут!', 'Тут сейв далеко!']), b.y - 120); }
       if (b.ltime > 3.6) { b.lie = 0; b.lying = false; b.pad = false; b.usedUlt = true; ySet('idle'); b.vy = -320; }
       break;
     }
@@ -1437,8 +1437,8 @@ function gav(b, ph) {
 function slipper(b) {
   const sx = b.x + b.facing * 85, sy = b.y - 110, T = .95;
   const tx = P.x + P.vx * .25, ty = P.y - 110;
-  foes.push({ kind: 'slipper', x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy - .5 * G * .8 * T * T) / T, w: 46, h: 24, grav: .8, life: 3, pop: true, rot: 0 });
-  sfx.treat(); word('ТАПОК!', sx, sy - 40, '#ffb36b', 24);
+  foes.push({ kind: 'slipper', x: sx, y: sy, vx: (tx - sx) / T, vy: (ty - sy - .5 * G * .8 * T * T) / T, w: 30, h: 30, grav: .8, life: 3.5, pop: true, rot: 0, bounces: 2 });
+  sfx.treat(); word('МЯЧИК!', sx, sy - 40, '#c8f04a', 24);
 }
 function addFriend(v) {
   if (!boss || boss.state === 'tamed') return;
@@ -1650,6 +1650,7 @@ function updFoes(dt) {
     if (f.kind === 'corep' || f.kind === 'towelp' || f.kind === 'sockp') f.rot = (f.rot || 0) + dt * (f.kind === 'towelp' ? 14 : 8);
     if (f.groundDie && f.y > GROUND - 8) { f.dead = true; dust(f.x, GROUND, 3); if (f.kind === 'sockp' && ents.filter(e => e.type === 'floorsock').length < 7) ents.push(mk('floorsock', clamp(f.x, ARENA_X + 60, ARENA_X + W - 60), GROUND)); }
     if ((f.kind === 'invite' || f.kind === 'paper') && f.y > GROUND - 20) { f.dead = true; dust(f.x, GROUND, 4); sfx.thud(); }
+    if (f.kind === 'slipper' && f.y > GROUND - 15 && f.vy > 0 && f.bounces > 0) { f.bounces--; f.y = GROUND - 15; f.vy *= -.62; f.vx *= .8; audio.tone(220, .08, 'sine', .12, -60); dust(f.x, GROUND, 2); }
     if ((f.kind === 'drop' || f.kind === 'slipper') && f.y > GROUND - 6) {
       f.dead = true;
       if (f.kind === 'drop') splashFx(f.x, GROUND - 2, 3); else { dust(f.x, GROUND, 3); sfx.thud(); }
@@ -2494,9 +2495,11 @@ function drawRocky(x, y, o) {
   const bob = Math.abs(o.vx) > 40 && o.onGround !== false ? -Math.abs(Math.sin(o.anim * 1.1)) * 5 : (o.eating ? Math.abs(Math.sin(time * 14)) * 3 : 0);
   ctx.translate(0, bob - (o.hop || 0));
   if (o.lean) ctx.rotate(o.lean);
+  if (o.state === 'shake') { const k = Math.sin(time * 55) * Math.min(1, o.st * 3); ctx.rotate(k * .09); ctx.scale(1 + Math.abs(k) * .05, 1 - Math.abs(k) * .04); }
+  if (o.eating && sp !== RSPR.eat) { ctx.translate(-w * .3, 0); ctx.rotate(.2 + Math.sin(time * 14) * .04); ctx.translate(w * .3, 0); }
   ctx.scale(1, cr * breath);
   ctx.drawImage(sp.img, -sp.ax * w, -h, w, h);
-  if (o.holding) drawSlipper((1 - sp.ax) * w * .82, -h * .62, 0);
+  if (o.holding) drawBall((1 - sp.ax) * w * .86, -h * .55, 0);
   ctx.restore();
 }
 function drawRockyVector(x, y, o) {
@@ -2838,6 +2841,14 @@ function drawTaxi(e) {
   ell(-150, -44, 6, 8); fs('#fff6b0', 3);
   ctx.restore();
 }
+function drawBall(x, y, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  ell(0, 0, 15, 15); fs('#c8f04a', 3);
+  ctx.beginPath(); ctx.arc(-15, 0, 13, -1.1, 1.1); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(15, 0, 13, Math.PI - 1.1, Math.PI + 1.1); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.beginPath(); ctx.ellipse(-5, -6, 4, 2.5, -.6, 0, 7); ctx.fill();
+  ctx.restore();
+}
 function drawSlipper(x, y, rot) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
   rr(-24, -8, 48, 16, 8); fs('#8b5a3c', 3.5);
@@ -2890,7 +2901,7 @@ function drawFoe(f) {
       ctx.save(); ctx.translate(x, f.y); ctx.rotate(Math.atan2(f.vy, f.vx) - Math.PI / 2);
       ctx.beginPath(); ctx.moveTo(0, 12); ctx.quadraticCurveTo(9, -2, 0, -10); ctx.quadraticCurveTo(-9, -2, 0, 12); fs('#7cc3ee', 3);
       ctx.restore(); break;
-    case 'slipper': drawSlipper(x, f.y, f.rot); break;
+    case 'slipper': drawBall(x, f.y, f.rot); break;
     case 'wave': {
       ctx.save(); ctx.translate(x, GROUND);
       ctx.beginPath(); ctx.moveTo(-f.w / 2 - 20, 0);
